@@ -7,6 +7,8 @@ using Content.Shared.GameWindow;
 using JetBrains.Annotations;
 using Robust.Client.Graphics;
 using Robust.Client.State;
+using Robust.Shared.Audio;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Configuration;
 using Robust.Shared.Player;
 using Robust.Shared.Utility;
@@ -22,8 +24,8 @@ namespace Content.Client.GameTicking.Managers
         [Dependency] private readonly SharedAudioSystem _audio = default!;
 
         [ViewVariables] private bool _initialized;
-        private Dictionary<EntityUid, Dictionary<string, uint?>>  _jobsAvailable = new();
-        private Dictionary<EntityUid, string> _stationNames = new();
+        private Dictionary<NetEntity, Dictionary<string, uint?>>  _jobsAvailable = new();
+        private Dictionary<NetEntity, string> _stationNames = new();
 
         /// <summary>
         /// The current round-end window. Could be used to support re-opening the window after closing it.
@@ -41,14 +43,14 @@ namespace Content.Client.GameTicking.Managers
         [ViewVariables] public TimeSpan RoundStartTimeSpan { get; private set; }
         [ViewVariables] public new bool Paused { get; private set; }
 
-        [ViewVariables] public IReadOnlyDictionary<EntityUid, Dictionary<string, uint?>> JobsAvailable => _jobsAvailable;
-        [ViewVariables] public IReadOnlyDictionary<EntityUid, string> StationNames => _stationNames;
+        [ViewVariables] public IReadOnlyDictionary<NetEntity, Dictionary<string, uint?>> JobsAvailable => _jobsAvailable;
+        [ViewVariables] public IReadOnlyDictionary<NetEntity, string> StationNames => _stationNames;
 
         public event Action? InfoBlobUpdated;
         public event Action? LobbyStatusUpdated;
         public event Action? LobbySongUpdated;
         public event Action? LobbyLateJoinStatusUpdated;
-        public event Action<IReadOnlyDictionary<EntityUid, Dictionary<string, uint?>>>? LobbyJobsAvailableUpdated;
+        public event Action<IReadOnlyDictionary<NetEntity, Dictionary<string, uint?>>>? LobbyJobsAvailableUpdated;
 
         public override void Initialize()
         {
@@ -56,6 +58,7 @@ namespace Content.Client.GameTicking.Managers
 
             SubscribeNetworkEvent<TickerJoinLobbyEvent>(JoinLobby);
             SubscribeNetworkEvent<TickerJoinGameEvent>(JoinGame);
+            SubscribeNetworkEvent<TickerConnectionStatusEvent>(ConnectionStatus);
             SubscribeNetworkEvent<TickerLobbyStatusEvent>(LobbyStatus);
             SubscribeNetworkEvent<TickerLobbyInfoEvent>(LobbyInfo);
             SubscribeNetworkEvent<TickerLobbyCountdownEvent>(LobbyCountdown);
@@ -66,7 +69,6 @@ namespace Content.Client.GameTicking.Managers
             });
             SubscribeNetworkEvent<TickerLateJoinStatusEvent>(LateJoinStatus);
             SubscribeNetworkEvent<TickerJobsAvailableEvent>(UpdateJobsAvailable);
-            SubscribeNetworkEvent<RoundRestartCleanupEvent>(RoundRestartCleanup);
 
             _initialized = true;
         }
@@ -89,14 +91,30 @@ namespace Content.Client.GameTicking.Managers
 
         private void UpdateJobsAvailable(TickerJobsAvailableEvent message)
         {
-            _jobsAvailable = message.JobsAvailableByStation;
-            _stationNames = message.StationNames;
+            _jobsAvailable.Clear();
+
+            foreach (var (job, data) in message.JobsAvailableByStation)
+            {
+                _jobsAvailable[job] = data;
+            }
+
+            _stationNames.Clear();
+            foreach (var weh in message.StationNames)
+            {
+                _stationNames[weh.Key] = weh.Value;
+            }
+
             LobbyJobsAvailableUpdated?.Invoke(JobsAvailable);
         }
 
         private void JoinLobby(TickerJoinLobbyEvent message)
         {
             _stateManager.RequestStateChange<LobbyState>();
+        }
+
+        private void ConnectionStatus(TickerConnectionStatusEvent message)
+        {
+            RoundStartTimeSpan = message.RoundStartTimeSpan;
         }
 
         private void LobbyStatus(TickerLobbyStatusEvent message)
@@ -142,23 +160,6 @@ namespace Content.Client.GameTicking.Managers
 
             //This is not ideal at all, but I don't see an immediately better fit anywhere else.
             _window = new RoundEndSummaryWindow(message.GamemodeTitle, message.RoundEndText, message.RoundDuration, message.RoundId, message.AllPlayersEndInfo, _entityManager);
-        }
-
-        private void RoundRestartCleanup(RoundRestartCleanupEvent ev)
-        {
-            if (string.IsNullOrEmpty(RestartSound))
-                return;
-
-            if (!_configManager.GetCVar(CCVars.RestartSoundsEnabled))
-            {
-                RestartSound = null;
-                return;
-            }
-
-            _audio.PlayGlobal(RestartSound, Filter.Local(), false);
-
-            // Cleanup the sound, we only want it to play when the round restarts after it ends normally.
-            RestartSound = null;
         }
     }
 }

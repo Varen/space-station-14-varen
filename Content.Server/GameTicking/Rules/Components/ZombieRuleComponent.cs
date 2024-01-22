@@ -1,6 +1,6 @@
-using Content.Shared.Actions.ActionTypes;
 using Content.Shared.Roles;
 using Robust.Shared.Audio;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
@@ -86,7 +86,7 @@ public sealed partial class ZombieRuleComponent : Component
     /// After this amount of the crew become zombies, the shuttle will be automatically called.
     /// </summary>
     [DataField("zombieShuttleCallPercentage")]
-    public float ZombieShuttleCallPercentage = 0.5f;
+    public float ZombieShuttleCallPercentage = 0.7f;
 
     /// <summary>
     /// Have we called the evac shuttle yet?
@@ -94,6 +94,6 @@ public sealed partial class ZombieRuleComponent : Component
     [DataField("shuttleCalled")]
     public bool ShuttleCalled;
 
-    [ValidatePrototypeId<InstantActionPrototype>]
-    public const string ZombifySelfActionPrototype = "TurnUndead";
+    [ValidatePrototypeId<EntityPrototype>]
+    public const string ZombifySelfActionPrototype = "ActionTurnUndead";
 }
