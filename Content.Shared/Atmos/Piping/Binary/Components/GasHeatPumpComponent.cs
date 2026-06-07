@@ -26,18 +26,28 @@ public sealed partial class GasHeatPumpComponent : Component
     public float TargetTemperature = Atmospherics.T20C;
 
     /// <summary>
-    ///     How much heat the pump moves between the two pipe sides  (joules per second).
-    ///     Not dependant on actual electricity it draws
-    ///		High number = Faster heat transfer
+    ///     Work term for the COP math, likely the same as the power draw
     /// </summary>
     [DataField]
-    public float HeatTransferRate = 5000f;
+    public float WorkInput = 5000f;
 
     /// <summary>
-    ///     Minim pressure before the pump enters Blocked state.
+    ///     Hard cap on heat moved per second, whatever the temperatures
     /// </summary>
     [DataField]
-    public float MinExternalPressure = 0.5f;
+    public float MaxHeatTransferRate = 14000f;
+
+    /// <summary>
+    ///     Fraction of ideal Carnot we actually hit, 1 = ideal
+    /// </summary>
+    [DataField]
+    public float CarnotEfficiency = 0.65f;
+
+    /// <summary>
+    ///     Min pressure on either side before the pump enters Blocked state.
+    /// </summary>
+    [DataField]
+    public float MinPressure = 0.5f;
 
     /// <summary>
     ///     Is either side above / below min or max temperature?

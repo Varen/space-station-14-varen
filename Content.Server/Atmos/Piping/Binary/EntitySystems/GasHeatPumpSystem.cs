@@ -94,7 +94,7 @@ public sealed partial class GasHeatPumpSystem : EntitySystem
 
         var previouslyBlocked = comp.Blocked;
 
-        if (external.Air.Pressure < comp.MinExternalPressure)
+        if (external.Air.Pressure < comp.MinPressure || regulated.Air.Pressure < comp.MinPressure)
         {
             comp.Blocked = true;
             if (previouslyBlocked != comp.Blocked)
@@ -135,9 +135,13 @@ public sealed partial class GasHeatPumpSystem : EntitySystem
 
         var coolingMode = delta > 0f;
 
-        // Respect conservation of energy
+        // Carnot COP capped by the max rate, tReg on top works for both heat and cool
+        var tempGap = MathF.Max(MathF.Abs(tExt - tReg), 1f);
+        var cop = comp.CarnotEfficiency * tReg / tempGap;
+        var heatRate = MathF.Min(comp.MaxHeatTransferRate, cop * comp.WorkInput);
+
         // Joules moved this tick
-        var joulesMoved = comp.HeatTransferRate * args.dt;
+        var joulesMoved = heatRate * args.dt;
 
         // Clamp to avoid going over/under the target temp
         var cReg = _atmosphereSystem.GetHeatCapacity(regulated.Air, true);
@@ -145,7 +149,8 @@ public sealed partial class GasHeatPumpSystem : EntitySystem
         if (joulesMoved > maxJoulesMoved)
             joulesMoved = maxJoulesMoved;
 
-        // Change the same amount on both sides
+        // Same amount leaves one side and enters the other
+        // q+w version (to make heat waste from power instead of magic consumption): joulesMoved + joulesMoved / cop
         if (coolingMode)
         {
             _atmosphereSystem.AddHeat(regulated.Air, -joulesMoved);
@@ -154,7 +159,7 @@ public sealed partial class GasHeatPumpSystem : EntitySystem
         else
         {
             _atmosphereSystem.AddHeat(regulated.Air, joulesMoved);
-            _atmosphereSystem.AddHeat(external.Air, joulesMoved);
+            _atmosphereSystem.AddHeat(external.Air, -joulesMoved);
         }
 
         _ambientSoundSystem.SetAmbience(uid, true);

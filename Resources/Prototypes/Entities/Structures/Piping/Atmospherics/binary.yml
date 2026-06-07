@@ -177,7 +177,7 @@
     - type: LightningTarget
       priority: 1
     - type: ApcPowerReceiver
-      powerLoad: 500
+      powerLoad: 5000
     - type: Rotatable
     - type: Transform
       noRot: false
@@ -206,13 +206,17 @@
     - type: PipeColorVisuals
     - type: GasHeatPump
       enabled: false
-      # Joules of heat moved between the two sides per second
-      # heatTransferRate: 5000
+      # Work term for the COP math, tune to avoid infinite energy
+      # workInput: 5000
+      # Hard cap on heat moved per second (Watt)
+      # maxHeatTransferRate: 14000
+      # Fraction of ideal Carnot reached, 1 = ideal
+      # carnotEfficiency: 0.65
       # Min / Max temperatures that lock out the heat pump
       # maxOperatingTemperature: 373.15
       # minOperatingTemperature: 173.15
-      # Lock out if the external pressure is too low
-      # minExternalPressure: 0.5
+      # Lock out if pressure is too low
+      # minPressure: 0.5
       # targetTemperature: 293.15
     - type: Construction
       graph: GasBinary
