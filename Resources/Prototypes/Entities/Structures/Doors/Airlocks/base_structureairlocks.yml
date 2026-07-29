@@ -111,9 +111,11 @@
     boardName: wires-board-name-airlock
     layoutId: Airlock
   - type: DoorSignalControl
+  - type: DoorDeviceControl
   - type: DeviceNetwork
     deviceNetId: Wireless
     receiveFrequencyId: BasicDevice
+    prefix: device-address-prefix-door
   - type: WirelessNetworkConnection
     range: 200
   - type: DeviceLinkSink
@@ -126,8 +128,10 @@
   - type: DeviceLinkSource
     ports:
       - DoorStatus
+      - DoorBoltStatus
     lastSignals:
       DoorStatus: false
+      DoorBoltStatus: false
   - type: SoundOnOverload
   - type: SpawnOnOverload
   - type: UserInterface

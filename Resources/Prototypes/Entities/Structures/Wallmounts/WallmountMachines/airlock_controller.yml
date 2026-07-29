@@ -1,0 +1,110 @@
+- type: entity
+  parent: BaseWallmountMachine
+  id: AirlockController
+  name: airlock controller
+  description: Cycles an airlock's atmosphere so the air doesn't go out the door with you.
+  components:
+  - type: StationAiWhitelist
+  - type: Electrified
+    enabled: false
+    usesApcPower: true
+  - type: DeviceNetwork
+    deviceNetId: AtmosDevices
+    receiveFrequencyId: AtmosMonitor
+    transmitFrequencyId: AtmosMonitor
+    prefix: device-address-prefix-airlock-controller
+    sendBroadcastAttemptEvent: true
+  - type: WiredNetworkConnection
+  - type: WirelessNetworkConnection
+    range: 200
+  - type: DeviceList
+  - type: DeviceNetworkRequiresPower
+  - type: DeviceLinkSource
+    ports:
+    - AirlockStateA
+    - AirlockStateB
+    - AirlockCycling
+    lastSignals:
+      AirlockStateA: true
+      AirlockStateB: false
+      AirlockCycling: false
+  - type: DeviceLinkSink
+    ports:
+    - AirlockCycleToA
+    - AirlockCycleToB
+  - type: AtmosDevice
+  - type: AirlockController
+  - type: Clickable
+  - type: InteractionOutline
+  - type: UserInterface
+    interfaces:
+      enum.AirlockControllerUiKey.Key:
+        type: AirlockControllerBoundUserInterface
+      enum.AirlockControllerUiKey.Config:
+        type: AirlockControllerConfigBoundUserInterface
+      enum.WiresUiKey.Key:
+        type: WiresBoundUserInterface
+  - type: WiresPanel
+  - type: Wires
+    boardName: wires-board-name-airlock-controller
+    layoutId: AirlockController
+  - type: AccessReader
+    access: [["Atmospherics"]]
+  - type: ContainerFill
+    containers:
+      board: [ AirlockControllerElectronics ]
+  - type: ContainerContainer
+    containers:
+      board: !type:Container
+  - type: Appearance
+  - type: WiresVisuals
+  # TODO: MAKE SPRITE GOOD!
+  - type: Sprite
+    sprite: Structures/Wallmounts/air_monitors.rsi
+    layers:
+    - state: alarmp
+      map: ["airlockControllerBase"]
+    - state: alarm0
+      map: ["airlockControllerState"]
+    - state: alarmx
+      map: ["enum.WiresVisualLayers.MaintenancePanel"]
+  - type: Construction
+    graph: AirlockController
+    node: airlock_controller
+  - type: Damageable
+    damageModifierSet: Metallic
+  - type: Injurable
+    damageContainer: StructuralInorganic
+  - type: Destructible
+    thresholds:
+    - trigger:
+        !type:DamageTrigger
+        damage: 100
+      behaviors:
+      - !type:DoActsBehavior
+        acts: [ "Destruction" ]
+      - !type:PlaySoundBehavior
+        sound:
+          collection: MetalGlassBreak
+          params:
+            volume: -4
+  - type: GuideHelp
+    guides:
+    - Airlocks
+    - DeviceMonitoringAndControl
+
+- type: entity
+  parent: BaseWallmountMetallic
+  id: AirlockControllerAssembly
+  name: airlock controller assembly
+  description: An airlock controller. It isn't controlling much of anything yet.
+  components:
+  - type: Sprite
+    sprite: Structures/Wallmounts/air_monitors.rsi
+    layers:
+    - state: alarm_b1
+      map: [ "enum.ConstructionVisuals.Layer" ]
+  - type: Appearance
+  - type: Construction
+    graph: AirlockController
+    node: assembly

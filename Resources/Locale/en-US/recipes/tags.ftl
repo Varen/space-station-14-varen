@@ -114,6 +114,7 @@ construction-graph-tag-health-analyzer = health analyzer
 
 # utils
 construction-graph-tag-air-alarm-electronics = air alarm electronics
+construction-graph-tag-airlock-controller-electronics = airlock controller electronics
 construction-graph-tag-fire-alarm-electronics = fire alarm electronics
 construction-graph-tag-mailing-unit-electronics = mailing unit electronics
 construction-graph-tag-intercom-electronics = intercom electronics

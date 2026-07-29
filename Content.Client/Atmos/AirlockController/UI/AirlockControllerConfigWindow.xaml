@@ -1,0 +1,47 @@
+<ui:FancyWindow xmlns="https://spacestation14.io"
+            xmlns:x="http://schemas.microsoft.com/winfx/2007/xaml"
+            xmlns:ui="clr-namespace:Content.Client.UserInterface.Controls"
+            xmlns:gfx="clr-namespace:Robust.Client.Graphics;assembly=Robust.Client"
+            MinSize="520 420" Resizable="True" Title="{Loc airlock-controller-config-ui-title}">
+    <BoxContainer Orientation="Vertical" Margin="5 5 5 5">
+        <!-- Install info -->
+        <BoxContainer Orientation="Horizontal" Margin="0 0 0 4">
+            <Label Text="{Loc 'airlock-controller-ui-address-label'}" Margin="0 0 4 0" />
+            <RichTextLabel Name="CAddressLabel" HorizontalExpand="True" />
+            <Label Text="{Loc 'airlock-controller-ui-doors-label'}" Margin="0 0 4 0" />
+            <RichTextLabel Name="CDoorsLabel" />
+        </BoxContainer>
+        <!-- Target sides -->
+        <BoxContainer Orientation="Horizontal" Margin="0 0 0 4">
+            <BoxContainer Orientation="Vertical" HorizontalExpand="True" Margin="0 0 4 0">
+                <Label Text="{Loc 'airlock-controller-config-preset-a'}" />
+                <FloatSpinBox Name="CPresetA" HorizontalExpand="True" />
+                <RichTextLabel Name="CSensorALabel" Visible="False" />
+            </BoxContainer>
+            <BoxContainer Orientation="Vertical" HorizontalExpand="True" Margin="4 0 0 0">
+                <Label Text="{Loc 'airlock-controller-config-preset-b'}" />
+                <FloatSpinBox Name="CPresetB" HorizontalExpand="True" />
+                <RichTextLabel Name="CSensorBLabel" Visible="False" />
+            </BoxContainer>
+        </BoxContainer>
+        <RichTextLabel Name="CPresetHint" Margin="0 0 0 4" />
+
+        <!-- Devices -->
+        <PanelContainer VerticalExpand="True" Margin="0 0 0 4">
+            <PanelContainer.PanelOverride>
+                <gfx:StyleBoxFlat BackgroundColor="#1B1B1E" />
+            </PanelContainer.PanelOverride>
+            <ScrollContainer HScrollEnabled="False">
+                <BoxContainer Name="CDeviceContainer" Orientation="Vertical" />
+            </ScrollContainer>
+        </PanelContainer>
+
+        <!-- Maaints mode / force side mode-->
+        <CheckBox Name="CMaintenanceCheck" Text="{Loc 'airlock-controller-config-maintenance'}" />
+        <BoxContainer Orientation="Horizontal">
+            <Label Text="{Loc 'airlock-controller-config-force-label'}" Margin="0 0 4 0" />
+            <Button Name="CForceAButton" Text="{Loc 'airlock-controller-side-a'}" HorizontalExpand="True" Margin="0 0 2 0" />
+            <Button Name="CForceBButton" Text="{Loc 'airlock-controller-side-b'}" HorizontalExpand="True" Margin="2 0 0 0" />
+        </BoxContainer>
+    </BoxContainer>
+</ui:FancyWindow>

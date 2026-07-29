@@ -19,6 +19,9 @@ signal-port-description-right = This port is invoked whenever the lever is moved
 signal-port-name-doorstatus = Door status
 signal-port-description-doorstatus = This port is invoked with HIGH when the door opens and LOW when the door finishes closing.
 
+signal-port-name-doorboltstatus = Door bolt status
+signal-port-description-doorboltstatus = This port is invoked with HIGH when the door is bolted and LOW when it is unbolted.
+
 signal-port-name-dockstatus = Dock status
 signal-port-description-dockstatus = This port is invoked with HIGH when docked and LOW when undocked.
 
@@ -75,3 +78,12 @@ signal-port-description-power-discharging = This port is invoked with HIGH when 
 
 signal-port-name-item-detected = Detected
 signal-port-description-item-detected = This port is invoked whenever the transmitter detects an item.
+
+signal-port-name-airlock-state-a = At side A
+signal-port-description-airlock-state-a = Held HIGH while the airlock is idle with its chamber at side A's atmosphere.
+
+signal-port-name-airlock-state-b = At side B
+signal-port-description-airlock-state-b = Held HIGH while the airlock is idle with its chamber at side B's atmosphere.
+
+signal-port-name-airlock-cycling = Cycling
+signal-port-description-airlock-cycling = Held HIGH for the duration of a cycle.

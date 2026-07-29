@@ -132,3 +132,14 @@
   id: SetParticleSigma
   name: signal-port-name-set-particle-sigma
   description: signal-port-description-set-particle-sigma
+
+- type: sinkPort
+  id: AirlockCycleToA
+  name: signal-port-name-airlock-cycle-to-a
+  description: signal-port-description-airlock-cycle-to-a
+
+- type: sinkPort
+  id: AirlockCycleToB
+  name: signal-port-name-airlock-cycle-to-b
+  description: signal-port-description-airlock-cycle-to-b
+

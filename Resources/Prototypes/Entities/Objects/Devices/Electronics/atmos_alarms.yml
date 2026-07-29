@@ -29,3 +29,18 @@
       - FireAlarmElectronics
   - type: StaticPrice
     price: 61
+
+- type: entity
+  id: AirlockControllerElectronics
+  parent: BaseElectronics
+  name: airlock controller electronics
+  description: An electronics board used in airlock controllers.
+  components:
+  - type: Sprite
+    sprite: Objects/Misc/module.rsi
+    state: airalarm_electronics
+  - type: Tag
+    tags:
+      - AirlockControllerElectronics
+  - type: StaticPrice
+    price: 61

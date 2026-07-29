@@ -72,6 +72,11 @@
 
 - type: latheRecipe
   parent: [ BaseElectronicsRecipe, BaseCircuitryRecipeCategory ]
+  id: AirlockControllerElectronics
+  result: AirlockControllerElectronics
+
+- type: latheRecipe
+  parent: [ BaseElectronicsRecipe, BaseCircuitryRecipeCategory ]
   id: IntercomElectronics
   result: IntercomElectronics
 

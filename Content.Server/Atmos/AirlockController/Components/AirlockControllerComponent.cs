@@ -1,0 +1,201 @@
+using Content.Shared.Atmos;
+using Content.Shared.Atmos.AirlockController;
+using Content.Shared.Atmos.Monitor;
+using Content.Shared.Atmos.Piping.Unary.Components;
+using Content.Shared.DeviceLinking;
+using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
+
+namespace Content.Server.Atmos.AirlockController.Components;
+
+/// <summary>
+///     A controller that cycles an airlock's atmosphere
+///     Uses vents, sensors and doors, with the device network.
+///     Has signals for other player use
+/// </summary>
+[RegisterComponent]
+public sealed partial class AirlockControllerComponent : Component
+{
+    #region Cycle state
+
+    [DataField]
+    public AirlockCycleState State = AirlockCycleState.Idle;
+
+    /// <summary>
+    ///     Current atmospheric contents belong to this side
+    /// </summary>
+    [DataField]
+    public AirlockSide CurrentSide = AirlockSide.A;
+
+    /// <summary>
+    ///     The side we're currently moving to, if cycling
+    /// </summary>
+    [DataField]
+    public AirlockSide TargetSide = AirlockSide.B;
+
+    /// <summary>
+    ///     First cancel press will invert the cycle to the safest possible option.
+    /// </summary>
+    [DataField]
+    public bool CancelRequested;
+
+    /// <summary>
+    ///     Why the cycle is stuck, if it is.
+    /// </summary>
+    [DataField]
+    public AirlockStallReason? StallReason;
+
+    /// <summary>
+    ///     Configuration mode. Unlocks everything and freezes the controller, for use while installing.
+    /// </summary>
+    [DataField]
+    public bool MaintenanceMode;
+
+    /// <summary>
+    ///     Set when the controller needs to put the doors back into the layout expected at Idle in CurrentSide
+    /// </summary>
+    [DataField]
+    public bool RestoreDoors;
+
+    #endregion
+
+    #region Device network
+
+    public readonly Dictionary<string, GasVentPumpData> VentData = new();
+
+    public readonly Dictionary<string, GasVentScrubberData> ScrubberData = new();
+
+    public readonly Dictionary<string, AtmosSensorData> SensorData = new();
+
+    /// <summary>
+    ///     Which task each vent is used for
+    /// </summary>
+    [DataField]
+    public Dictionary<string, AirlockVentRole> VentRoles = new();
+
+    /// <summary>
+    ///     Which side each door belongs to.
+    /// </summary>
+    [DataField]
+    public Dictionary<string, AirlockSide> DoorRoles = new();
+
+    /// <summary>
+    ///     All doors must report status before continuing
+    /// </summary>
+    public readonly Dictionary<string, AirlockDoorReport> DoorReports = new();
+
+    /// <summary>
+    ///     If set, these will be used to match target pressure on them for each side. Otherwise, we use presets.
+    /// </summary>
+    [DataField]
+    public Dictionary<AirlockSide, string> TargetSensors = new();
+
+    #endregion
+
+    #region Per-side configuration
+
+    /// <summary>
+    ///     Used when no target sensor is assigned to that side.
+    /// </summary>
+    [DataField]
+    public float PresetPressureA = Atmospherics.OneAtmosphere;
+
+    [DataField]
+    public float PresetPressureB;
+
+    #endregion
+
+    #region Tuning
+
+    [DataField]
+    public float PressureTolerance = 5f;
+
+    /// <summary>
+    ///     At or below this pressure the chamber counts as empty.
+    /// </summary>
+    [DataField]
+    public float EvacuatedPressure = Atmospherics.Epsilon;
+
+    [DataField]
+    public TimeSpan StallTimeout = TimeSpan.FromSeconds(10);
+
+    [DataField]
+    public TimeSpan UpdateInterval = TimeSpan.FromSeconds(1);
+
+    [ViewVariables]
+    public TimeSpan NextUpdate;
+
+    /// <summary>
+    ///     Used for stalling detection
+    /// </summary>
+    [ViewVariables]
+    public float LastProgressValue = float.NaN;
+
+    [ViewVariables]
+    public TimeSpan LastProgressTime;
+
+    #endregion
+
+    #region Signals
+
+    /// <summary>
+    ///     Player-wired cycle requests. Not access checked — a signal is a signal; gate it
+    ///     with a lockable button if you want it restricted.
+    /// </summary>
+    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SinkPortPrototype>))]
+    public string CycleToAPort = "AirlockCycleToA";
+
+    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SinkPortPrototype>))]
+    public string CycleToBPort = "AirlockCycleToB";
+
+    /// <summary>
+    ///     Held high while the chamber is at side A's atmosphere and idle.
+    /// </summary>
+    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SourcePortPrototype>))]
+    public string StateAPort = "AirlockStateA";
+
+    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SourcePortPrototype>))]
+    public string StateBPort = "AirlockStateB";
+
+    /// <summary>
+    ///     Held high for the whole cycle. Drives the spinny light and any extra feedback
+    ///     someone wires up.
+    /// </summary>
+    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SourcePortPrototype>))]
+    public string CyclingPort = "AirlockCycling";
+
+    #endregion
+
+    /// <summary>
+    ///     Bolt wire can becut
+    /// </summary>
+    [DataField]
+    public bool BoltingEnabled = true;
+
+    /// <summary>
+    ///     Emergency lights wire can be cut
+    /// </summary>
+    [DataField]
+    public bool EmergencyLightsEnabled = true;
+}
+
+/// <summary>
+///     The last thing one door told us about itself.
+/// </summary>
+public struct AirlockDoorReport
+{
+    /// <summary>
+    ///     If we don't know, assume open
+    /// </summary>
+    public bool Open = true;
+
+    public bool Bolted = false;
+
+    /// <summary>
+    ///     False for doors with no bolts, like shutters
+    /// </summary>
+    public bool Boltable = false;
+
+    public AirlockDoorReport()
+    {
+    }
+}

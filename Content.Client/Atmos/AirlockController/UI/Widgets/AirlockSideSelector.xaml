@@ -1,0 +1,7 @@
+<BoxContainer xmlns="https://spacestation14.io"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+              Orientation="Horizontal">
+    <Button Name="NoneButton" Text="{Loc 'airlock-controller-config-none'}" ToggleMode="True" StyleClasses="OpenRight" HorizontalExpand="True" />
+    <Button Name="SideAButton" Text="{Loc 'airlock-controller-side-a'}" ToggleMode="True" StyleClasses="OpenBoth" HorizontalExpand="True" />
+    <Button Name="SideBButton" Text="{Loc 'airlock-controller-side-b'}" ToggleMode="True" StyleClasses="OpenLeft" HorizontalExpand="True" />
+</BoxContainer>
