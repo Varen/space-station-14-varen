@@ -2,6 +2,7 @@ using Content.Server.Atmos.AirlockController.Components;
 using Content.Server.Atmos.Monitor.Systems;
 using Content.Server.DeviceLinking.Systems;
 using Content.Server.DeviceNetwork.Systems;
+using Content.Server.Power.EntitySystems;
 using Content.Shared.Access.Systems;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.AirlockController;
@@ -33,6 +34,7 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     [Dependency] private DeviceNetworkSystem _deviceNetwork = default!;
     [Dependency] private DeviceLinkSystem _signal = default!;
     [Dependency] private DeviceListSystem _deviceList = default!;
+    [Dependency] private PowerReceiverSystem _power = default!;
     [Dependency] private AccessReaderSystem _access = default!;
     [Dependency] private SharedPopupSystem _popup = default!;
     [Dependency] private SharedUserInterfaceSystem _ui = default!;
@@ -167,7 +169,59 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     }
 
     /// <summary>
-    ///     Assigned doors that are still bound to us.
+    ///     Drops cached entries for devices that are gone.
+    /// </summary>
+    private void PruneCaches(Entity<AirlockControllerComponent> ent)
+    {
+        var comp = ent.Comp;
+        var devices = _deviceList.GetDeviceList(ent.Owner);
+
+        Prune(comp.VentData, devices);
+        Prune(comp.ScrubberData, devices);
+        Prune(comp.SensorData, devices);
+        Prune(comp.DoorReports, devices);
+    }
+
+    private static void Prune<T>(Dictionary<string, T> cache, Dictionary<string, EntityUid> devices)
+    {
+        List<string>? stale = null;
+
+        foreach (var address in cache.Keys)
+        {
+            if (devices.ContainsKey(address))
+                continue;
+
+            stale ??= new List<string>();
+            stale.Add(address);
+        }
+
+        if (stale == null)
+            return;
+
+        foreach (var address in stale)
+        {
+            cache.Remove(address);
+        }
+    }
+
+    /// <summary>
+    ///     Devices that are ok to use right now
+    /// </summary>
+    private Dictionary<string, EntityUid> LiveDevices(Entity<AirlockControllerComponent> ent)
+    {
+        var live = new Dictionary<string, EntityUid>();
+
+        foreach (var (address, device) in _deviceList.GetDeviceList(ent.Owner))
+        {
+            if (_power.IsPowered(device))
+                live.Add(address, device);
+        }
+
+        return live;
+    }
+
+    /// <summary>
+    ///     Assigned doors that are still bound to us
     /// </summary>
     private List<(string Address, AirlockSide Side)> BoundDoors(Entity<AirlockControllerComponent> ent)
     {
@@ -242,6 +296,10 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         comp.TargetSide = side;
         comp.CancelRequested = false;
         comp.StallReason = null;
+
+        // Sealing shuts and bolts everything already
+        comp.RestoreDoors = false;
+
         SetState(ent, AirlockCycleState.Sealing);
         return true;
     }
@@ -311,6 +369,8 @@ public sealed partial class AirlockControllerSystem : EntitySystem
                 continue;
 
             comp.NextUpdate = now + comp.UpdateInterval;
+
+            PruneCaches((uid, comp));
 
             var cycling = !comp.MaintenanceMode && comp.State != AirlockCycleState.Idle;
             var uiOpen = _ui.IsUiOpen(uid, AirlockControllerUiKey.Key)
@@ -448,31 +508,55 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     }
 
     /// <summary>
-    ///     Closes every door, waits until they are all actually shut, and then bolts them.
+    ///     Shuts every door, then bolts. Doors bolted open can't close, unbolt first.
     /// </summary>
     private void UpdateSealing(Entity<AirlockControllerComponent> ent, TimeSpan now)
     {
         var comp = ent.Comp;
-        var closed = CountClosedDoors(ent);
-        var bolted = CountBoltedDoors(ent);
-        var total = BoundDoors(ent).Count;
+        var doors = BoundDoors(ent);
 
-        if (total == 0)
+        if (doors.Count == 0)
             return;
 
-        // Are they all closed? If not, close
-        if (closed < total)
+        // Doors that are where we want them, stall only when nothing moves
+        var progress = 0;
+        var allSealed = true;
+
+        foreach (var (address, _) in doors)
         {
-            CommandAllDoors(ent, DoorNetworkCommands.Close);
-            CheckProgress(ent, closed, now, AirlockStallReason.NotSealing);
-            return;
+            // No report yet, PollDoors will ask again
+            if (!comp.DoorReports.TryGetValue(address, out var report))
+            {
+                allSealed = false;
+                continue;
+            }
+
+            if (report.Open)
+            {
+                SendDoorCommand(ent, address, report.Bolted
+                    ? DoorNetworkCommands.Unbolt
+                    : DoorNetworkCommands.Close);
+
+                allSealed = false;
+                continue;
+            }
+
+            progress++;
+
+            // Shut. Bolt unless it has no bolts or the wire is cut
+            if (!comp.BoltingEnabled || !report.Boltable || report.Bolted)
+            {
+                progress++;
+                continue;
+            }
+
+            SendDoorCommand(ent, address, DoorNetworkCommands.Bolt);
+            allSealed = false;
         }
 
-        // Ok they're all closed, are they bolted? If not, bolt. Also cut wire means we don't care.
-        if (comp.BoltingEnabled && bolted < total)
+        if (!allSealed)
         {
-            CommandAllDoors(ent, DoorNetworkCommands.Bolt);
-            CheckProgress(ent, total + bolted, now, AirlockStallReason.NotSealing);
+            CheckProgress(ent, progress, now, AirlockStallReason.NotSealing);
             return;
         }
 
@@ -483,23 +567,26 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     {
         var comp = ent.Comp;
 
-        // Re-sent every tick otherwise vents can get status stuck if something changes in pipes
+        // Re-sent every tick or vents can get status stuck
         ApplyVents(ent, siphon: true);
 
-        if (!TryGetChamberPressure(comp, out var highest))
+        if (!TryGetChamberPressure(ent, out var average))
         {
             comp.StallReason = AirlockStallReason.NoSensors;
             return;
         }
 
-        // Vacuum reached everywhere?
-        if (highest <= comp.EvacuatedPressure)
+        // Wait for atmos to catch up
+        if (average <= comp.EvacuatedPressure)
         {
-            SetState(ent, AirlockCycleState.Filling);
+            if (++comp.StableTicks >= comp.RequiredStableTicks)
+                SetState(ent, AirlockCycleState.Filling);
+
             return;
         }
 
-        CheckProgress(ent, highest, now, AirlockStallReason.NotProgressing);
+        comp.StableTicks = 0;
+        CheckProgress(ent, average, now, AirlockStallReason.NotProgressing);
     }
 
     private void UpdateFilling(Entity<AirlockControllerComponent> ent, TimeSpan now)
@@ -508,21 +595,24 @@ public sealed partial class AirlockControllerSystem : EntitySystem
 
         ApplyVents(ent, siphon: false);
 
-        if (!TryGetChamberPressure(comp, out var highest))
+        if (!TryGetChamberPressure(ent, out var average))
         {
             comp.StallReason = AirlockStallReason.NoSensors;
             return;
         }
 
-        var target = GetTargetPressure(comp, comp.TargetSide);
+        var target = GetTargetPressure(ent, comp.TargetSide);
 
-        if (MathF.Abs(highest - target) <= comp.PressureTolerance)
+        if (MathF.Abs(average - target) <= comp.PressureTolerance)
         {
-            SetState(ent, AirlockCycleState.Unsealing);
+            if (++comp.StableTicks >= comp.RequiredStableTicks)
+                SetState(ent, AirlockCycleState.Unsealing);
+
             return;
         }
 
-        CheckProgress(ent, highest, now, AirlockStallReason.NotProgressing);
+        comp.StableTicks = 0;
+        CheckProgress(ent, average, now, AirlockStallReason.NotProgressing);
     }
 
     private void UpdateUnsealing(Entity<AirlockControllerComponent> ent)
@@ -560,35 +650,6 @@ public sealed partial class AirlockControllerSystem : EntitySystem
             comp.StallReason = reason;
     }
 
-    private int CountClosedDoors(Entity<AirlockControllerComponent> ent)
-    {
-        var count = 0;
-
-        foreach (var (address, _) in BoundDoors(ent))
-        {
-            if (ent.Comp.DoorReports.TryGetValue(address, out var report) && !report.Open)
-                count++;
-        }
-
-        return count;
-    }
-
-    private int CountBoltedDoors(Entity<AirlockControllerComponent> ent)
-    {
-        var count = 0;
-
-        foreach (var (address, _) in BoundDoors(ent))
-        {
-            if (!ent.Comp.DoorReports.TryGetValue(address, out var report))
-                continue;
-
-            if (report.Bolted || !report.Boltable)
-                count++;
-        }
-
-        return count;
-    }
-
     private bool IsSideUnbolted(Entity<AirlockControllerComponent> ent, AirlockSide side)
     {
         var comp = ent.Comp;
@@ -618,11 +679,13 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         comp.State = state;
         comp.LastProgressValue = float.NaN;
         comp.LastProgressTime = _timing.CurTime;
+        comp.StableTicks = 0;
 
         switch (state)
         {
             case AirlockCycleState.Sealing:
-                // Close to start with, actual bolting is in the cycle when all is report closed
+                // Need fresh reports for doors
+                comp.DoorReports.Clear();
                 CommandAllDoors(ent, DoorNetworkCommands.Close);
                 StopVents(ent);
                 break;
@@ -698,43 +761,47 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         }
     }
 
-    private void SetBolts(Entity<AirlockControllerComponent> ent, bool bolted)
-    {
-        if (!ent.Comp.BoltingEnabled)
-            return;
-
-        CommandAllDoors(ent, bolted ? DoorNetworkCommands.Bolt : DoorNetworkCommands.Unbolt);
-    }
-
     #endregion
 
     #region Atmos devices
 
     /// <summary>
-    ///     Highest pressure any chamber sensor is reporting in the chamber
+    ///     Averages out all chamber sensors
     /// </summary>
-    private static bool TryGetChamberPressure(AirlockControllerComponent comp, out float highest)
+    private bool TryGetChamberPressure(Entity<AirlockControllerComponent> ent, out float average)
     {
-        highest = 0f;
-        var found = false;
+        var comp = ent.Comp;
 
-        foreach (var sensor in comp.SensorData)
+        average = 0f;
+        var count = 0;
+
+        foreach (var address in LiveDevices(ent).Keys)
         {
             // Exclude outside sensors
-            if (comp.TargetSensors.ContainsValue(sensor.Key))
+            if (comp.TargetSensors.ContainsValue(address))
                 continue;
 
-            highest = found ? MathF.Max(highest, sensor.Value.Pressure) : sensor.Value.Pressure;
-            found = true;
+            if (!comp.SensorData.TryGetValue(address, out var sensor))
+                continue;
+
+            average += sensor.Pressure;
+            count++;
         }
 
-        return found;
+        if (count == 0)
+            return false;
+
+        average /= count;
+        return true;
     }
 
-    private float GetTargetPressure(AirlockControllerComponent comp, AirlockSide side)
+    private float GetTargetPressure(Entity<AirlockControllerComponent> ent, AirlockSide side)
     {
-        // Preset or target sensor mode?
+        var comp = ent.Comp;
+
+        // Preset or target sensor mode? Use preset if sensor died
         if (comp.TargetSensors.TryGetValue(side, out var address)
+            && LiveDevices(ent).ContainsKey(address)
             && comp.SensorData.TryGetValue(address, out var data))
         {
             return data.Pressure;
@@ -761,11 +828,15 @@ public sealed partial class AirlockControllerSystem : EntitySystem
             _ => AirlockVentRole.VentB,
         };
 
-        var target = siphon ? 0f : GetTargetPressure(comp, side);
+        var target = siphon ? 0f : GetTargetPressure(ent, side);
         var used = false;
+        var live = LiveDevices(ent);
 
         foreach (var (address, roles) in comp.VentRoles)
         {
+            if (!live.ContainsKey(address))
+                continue;
+
             var wants = (roles & wanted) != 0;
 
             if (comp.VentData.ContainsKey(address))

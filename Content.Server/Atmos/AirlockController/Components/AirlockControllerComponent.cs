@@ -107,13 +107,22 @@ public sealed partial class AirlockControllerComponent : Component
     #region Tuning
 
     [DataField]
-    public float PressureTolerance = 5f;
+    public float PressureTolerance = Atmospherics.Epsilon;
 
     /// <summary>
     ///     At or below this pressure the chamber counts as empty.
     /// </summary>
     [DataField]
     public float EvacuatedPressure = Atmospherics.Epsilon;
+
+    /// <summary>
+    ///     How long to wait after filling just to let atmos settle
+    /// </summary>
+    [DataField]
+    public int RequiredStableTicks = 3;
+
+    [ViewVariables]
+    public int StableTicks;
 
     [DataField]
     public TimeSpan StallTimeout = TimeSpan.FromSeconds(10);

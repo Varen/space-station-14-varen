@@ -12,10 +12,10 @@ namespace Content.Server.Doors.Systems;
 ///     use a door over the device network and ask what it's doing.
 ///     Stateless, the reply goes to whoever asked
 /// </summary>
-public sealed class DoorDeviceControlSystem : EntitySystem
+public sealed partial class DoorDeviceControlSystem : EntitySystem
 {
-    [Dependency] private readonly DeviceNetworkSystem _deviceNetwork = default!;
-    [Dependency] private readonly DoorSystem _doors = default!;
+    [Dependency] private DeviceNetworkSystem _deviceNetwork = default!;
+    [Dependency] private DoorSystem _doors = default!;
 
     public override void Initialize()
     {

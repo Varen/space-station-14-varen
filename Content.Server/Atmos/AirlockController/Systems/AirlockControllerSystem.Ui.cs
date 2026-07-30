@@ -66,7 +66,7 @@ public sealed partial class AirlockControllerSystem
             StallReason = comp.StallReason,
             CancelRequested = comp.CancelRequested,
             MaintenanceMode = comp.MaintenanceMode,
-            ChamberPressure = TryGetChamberPressure(comp, out var pressure) ? pressure : null,
+            ChamberPressure = TryGetChamberPressure(ent, out var pressure) ? pressure : null,
         };
 
         _ui.SetUiState(ent.Owner, AirlockControllerUiKey.Key, state);
