@@ -12,14 +12,14 @@ namespace Content.Client.Atmos.AirlockController.UI;
 [GenerateTypedNameReferences]
 public sealed partial class AirlockControllerConfigWindow : FancyWindow
 {
-    public event Action<string, AirlockVentRole>? VentRolesChanged;
-    public event Action<string, AirlockSide?>? DoorSideChanged;
-    public event Action<AirlockSide, string?>? TargetSensorChanged;
+    public event Action<NetEntity, AirlockVentRole>? VentRolesChanged;
+    public event Action<NetEntity, AirlockSide?>? DoorSideChanged;
+    public event Action<AirlockSide, NetEntity?>? TargetSensorChanged;
     public event Action<AirlockSide, float>? PresetChanged;
     public event Action<bool>? MaintenanceChanged;
     public event Action<AirlockSide>? ForceSideRequested;
 
-    private readonly Dictionary<string, AirlockDeviceRow> _rows = new();
+    private readonly Dictionary<NetEntity, AirlockDeviceRow> _rows = new();
 
     public AirlockControllerConfigWindow()
     {
@@ -48,34 +48,44 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
         CAddressLabel.SetMarkup(state.Address);
         CDoorsLabel.SetMarkup(state.DoorCount.ToString());
 
-        var seen = new HashSet<string>();
+        var onA = state.CurrentSide == AirlockSide.A;
+
+        CCurrentSideLabel.SetMarkup(Loc.GetString(onA
+            ? "airlock-controller-side-a"
+            : "airlock-controller-side-b"));
+
+        // Forcing the side you're already on does nothing
+        CForceAButton.Disabled = onA;
+        CForceBButton.Disabled = !onA;
+
+        var seen = new HashSet<NetEntity>();
 
         foreach (var device in state.Devices)
         {
-            seen.Add(device.Address);
+            seen.Add(device.Device);
 
-            if (_rows.TryGetValue(device.Address, out var row))
+            if (_rows.TryGetValue(device.Device, out var row))
             {
                 row.SetData(device);
                 continue;
             }
 
             row = new AirlockDeviceRow(device);
-            row.OnDoorSideChanged += (addr, side) => DoorSideChanged?.Invoke(addr, side);
-            row.OnVentRolesChanged += (addr, roles) => VentRolesChanged?.Invoke(addr, roles);
-            row.OnTargetSensorChanged += (side, addr) => TargetSensorChanged?.Invoke(side, addr);
+            row.OnDoorSideChanged += (uid, side) => DoorSideChanged?.Invoke(uid, side);
+            row.OnVentRolesChanged += (uid, roles) => VentRolesChanged?.Invoke(uid, roles);
+            row.OnTargetSensorChanged += (side, uid) => TargetSensorChanged?.Invoke(side, uid);
 
-            _rows[device.Address] = row;
+            _rows[device.Device] = row;
             CDeviceContainer.AddChild(row);
         }
 
-        foreach (var address in _rows.Keys.ToArray())
+        foreach (var device in _rows.Keys.ToArray())
         {
-            if (seen.Contains(address))
+            if (seen.Contains(device))
                 continue;
 
-            CDeviceContainer.RemoveChild(_rows[address]);
-            _rows.Remove(address);
+            CDeviceContainer.RemoveChild(_rows[device]);
+            _rows.Remove(device);
         }
     }
 

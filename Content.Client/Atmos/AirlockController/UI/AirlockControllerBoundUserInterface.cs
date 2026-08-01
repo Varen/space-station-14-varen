@@ -57,9 +57,9 @@ public sealed class AirlockControllerConfigBoundUserInterface : BoundUserInterfa
 
         _window = this.CreateWindow<AirlockControllerConfigWindow>();
 
-        _window.VentRolesChanged += (addr, roles) => SendMessage(new AirlockControllerSetVentRolesMessage(addr, roles));
-        _window.DoorSideChanged += (addr, side) => SendMessage(new AirlockControllerSetDoorSideMessage(addr, side));
-        _window.TargetSensorChanged += (side, addr) => SendMessage(new AirlockControllerSetTargetSensorMessage(side, addr));
+        _window.VentRolesChanged += (uid, roles) => SendMessage(new AirlockControllerSetVentRolesMessage(uid, roles));
+        _window.DoorSideChanged += (uid, side) => SendMessage(new AirlockControllerSetDoorSideMessage(uid, side));
+        _window.TargetSensorChanged += (side, uid) => SendMessage(new AirlockControllerSetTargetSensorMessage(side, uid));
         _window.PresetChanged += (side, pressure) => SendMessage(new AirlockControllerSetPresetMessage(side, pressure));
         _window.MaintenanceChanged += enabled => SendMessage(new AirlockControllerSetMaintenanceMessage(enabled));
         _window.ForceSideRequested += side => SendMessage(new AirlockControllerForceSideMessage(side));

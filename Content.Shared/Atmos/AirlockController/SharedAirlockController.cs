@@ -90,6 +90,16 @@ public enum AirlockStallReason : byte
     ///     The doors aren't closing or bolting. Restore power or gett that cabinet off the door
     /// </summary>
     NotSealing = 4,
+
+    /// <summary>
+    ///     Not enough of an airlock to cycle. Needs a door assigned to each side.
+    /// </summary>
+    MissingDoors = 5,
+
+    /// <summary>
+    ///     Cycle is done but the target side won't unbolt or open.
+    /// </summary>
+    NotOpening = 6,
 }
 
 [Serializable, NetSerializable]

@@ -8,7 +8,13 @@ namespace Content.Shared.Atmos.AirlockController;
 [Serializable, NetSerializable]
 public sealed class AirlockDeviceEntry
 {
+    public NetEntity Device;
+
+    /// <summary>
+    ///     Display only
+    /// </summary>
     public string Address = string.Empty;
+
     public string Name = string.Empty;
 
     public bool IsVent;
@@ -57,6 +63,7 @@ public sealed class AirlockControllerConfigUiState : BoundUserInterfaceState
     public float PresetPressureA;
     public float PresetPressureB;
     public bool MaintenanceMode;
+    public AirlockSide CurrentSide;
 
     /// <summary>
     ///     Set when a side follows a sensor
@@ -90,12 +97,12 @@ public sealed class AirlockControllerOpenConfigMessage : BoundUserInterfaceMessa
 [Serializable, NetSerializable]
 public sealed class AirlockControllerSetVentRolesMessage : BoundUserInterfaceMessage
 {
-    public string Address;
+    public NetEntity Device;
     public AirlockVentRole Roles;
 
-    public AirlockControllerSetVentRolesMessage(string address, AirlockVentRole roles)
+    public AirlockControllerSetVentRolesMessage(NetEntity device, AirlockVentRole roles)
     {
-        Address = address;
+        Device = device;
         Roles = roles;
     }
 }
@@ -103,13 +110,13 @@ public sealed class AirlockControllerSetVentRolesMessage : BoundUserInterfaceMes
 [Serializable, NetSerializable]
 public sealed class AirlockControllerSetDoorSideMessage : BoundUserInterfaceMessage
 {
-    public string Address;
+    public NetEntity Device;
 
     public AirlockSide? Side;
 
-    public AirlockControllerSetDoorSideMessage(string address, AirlockSide? side)
+    public AirlockControllerSetDoorSideMessage(NetEntity device, AirlockSide? side)
     {
-        Address = address;
+        Device = device;
         Side = side;
     }
 }
@@ -119,12 +126,12 @@ public sealed class AirlockControllerSetTargetSensorMessage : BoundUserInterface
 {
     public AirlockSide Side;
 
-    public string? Address;
+    public NetEntity? Device;
 
-    public AirlockControllerSetTargetSensorMessage(AirlockSide side, string? address)
+    public AirlockControllerSetTargetSensorMessage(AirlockSide side, NetEntity? device)
     {
         Side = side;
-        Address = address;
+        Device = device;
     }
 }
 

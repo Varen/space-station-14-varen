@@ -1,4 +1,7 @@
 using Content.Server.Atmos.AirlockController.Components;
+using Content.Server.Atmos.Monitor.Components;
+using Content.Server.Atmos.Piping.Unary.Components;
+using Content.Server.Doors.Components;
 using Content.Server.Power.EntitySystems;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.AirlockController;
@@ -44,6 +47,15 @@ public sealed partial class AirlockControllerSystem
         if (!args.Complex || args.Handled)
             return;
 
+        // Mappers get the config, regular UI is useless to them
+        if (IsMapping(ent))
+        {
+            _ui.OpenUi(ent.Owner, AirlockControllerUiKey.Config, args.User);
+            UpdateConfigUi(ent);
+            args.Handled = true;
+            return;
+        }
+
         if (!this.IsPowered(ent, EntityManager))
             return;
 
@@ -77,6 +89,9 @@ public sealed partial class AirlockControllerSystem
 
     private void OnCycleMessage(Entity<AirlockControllerComponent> ent, ref AirlockControllerCycleMessage args)
     {
+        if (!IsValidSide(args.Side))
+            return;
+
         TryRequestCycle(ent, args.Side, args.Actor);
         UpdateUi(ent);
     }
@@ -102,6 +117,9 @@ public sealed partial class AirlockControllerSystem
 
     private bool CheckConfigAccess(Entity<AirlockControllerComponent> ent, EntityUid user)
     {
+        if (IsMapping(ent))
+            return true;
+
         if (!_access.IsAllowed(user, ent))
         {
             DenyAccess(ent, user);
@@ -121,30 +139,36 @@ public sealed partial class AirlockControllerSystem
         {
             var entry = new AirlockDeviceEntry
             {
+                Device = GetNetEntity(uid),
                 Address = address,
                 Name = Name(uid),
-                IsVent = comp.VentData.ContainsKey(address),
-                IsScrubber = comp.ScrubberData.ContainsKey(address),
-                IsSensor = comp.SensorData.ContainsKey(address),
-                IsDoor = HasComp<Content.Server.Doors.Components.DoorDeviceControlComponent>(uid),
+                // Components because if we go for addresses saving and such breaks, thanks NetworkDevicebama
+                IsVent = HasComp<GasVentPumpComponent>(uid),
+                IsScrubber = HasComp<GasVentScrubberComponent>(uid),
+                IsSensor = HasComp<AtmosMonitorComponent>(uid),
+                IsDoor = HasComp<DoorDeviceControlComponent>(uid),
             };
 
-            if (comp.VentRoles.TryGetValue(address, out var roles))
+            if (comp.VentRoles.TryGetValue(uid, out var roles))
                 entry.VentRoles = roles;
 
-            if (comp.DoorRoles.TryGetValue(address, out var side))
+            if (comp.DoorRoles.TryGetValue(uid, out var side))
                 entry.DoorSide = side;
 
-            foreach (var (targetSide, targetAddress) in comp.TargetSensors)
+            foreach (var (targetSide, targetSensor) in comp.TargetSensors)
             {
-                if (targetAddress == address)
+                if (targetSensor == uid)
                     entry.SensorTargetFor = targetSide;
             }
 
             entries.Add(entry);
         }
 
-        entries.Sort((a, b) => string.CompareOrdinal(a.Address, b.Address));
+        entries.Sort((a, b) =>
+        {
+            var group = DeviceGroup(a).CompareTo(DeviceGroup(b));
+            return group != 0 ? group : string.CompareOrdinal(a.Name, b.Name);
+        });
 
         _ui.SetUiState(ent.Owner, AirlockControllerUiKey.Config, new AirlockControllerConfigUiState
         {
@@ -154,9 +178,27 @@ public sealed partial class AirlockControllerSystem
             PresetPressureA = comp.PresetPressureA,
             PresetPressureB = comp.PresetPressureB,
             MaintenanceMode = comp.MaintenanceMode,
+            CurrentSide = comp.CurrentSide,
             TargetSensorNameA = TargetSensorName(comp, devices, AirlockSide.A),
             TargetSensorNameB = TargetSensorName(comp, devices, AirlockSide.B),
         });
+    }
+
+    /// <summary>
+    ///     For UI sorting devices in neat groups
+    /// </summary>
+    private static int DeviceGroup(AirlockDeviceEntry device)
+    {
+        if (device.IsDoor)
+            return 0;
+
+        if (device.IsVent)
+            return 1;
+
+        if (device.IsScrubber)
+            return 2;
+
+        return device.IsSensor ? 3 : 4;
     }
 
     private string? TargetSensorName(
@@ -164,26 +206,47 @@ public sealed partial class AirlockControllerSystem
         Dictionary<string, EntityUid> devices,
         AirlockSide side)
     {
-        if (!comp.TargetSensors.TryGetValue(side, out var address))
+        if (!comp.TargetSensors.TryGetValue(side, out var sensor))
             return null;
 
-        return devices.TryGetValue(address, out var uid)
-            ? $"{Name(uid)} ({address})"
-            : null;
+        // Unbound sensor falls back to the preset
+        foreach (var (address, uid) in devices)
+        {
+            if (uid == sensor)
+                return $"{Name(uid)} ({address})";
+        }
+
+        return null;
     }
+
+    /// <summary>
+    ///     Validate user input!!
+    /// </summary>
+    private static bool IsValidSide(AirlockSide side)
+    {
+        return side is AirlockSide.A or AirlockSide.B;
+    }
+
+    private const AirlockVentRole AllVentRoles =
+        AirlockVentRole.VentA | AirlockVentRole.SiphonA | AirlockVentRole.VentB | AirlockVentRole.SiphonB;
 
     private void OnSetVentRoles(Entity<AirlockControllerComponent> ent, ref AirlockControllerSetVentRolesMessage args)
     {
         if (!CheckConfigAccess(ent, args.Actor))
             return;
 
-        if (!_deviceList.ExistsInDeviceList(ent.Owner, args.Address))
+        if (!TryGetEntity(args.Device, out var vent) || !InDeviceList(ent, vent.Value))
             return;
 
-        if (args.Roles == AirlockVentRole.None)
-            ent.Comp.VentRoles.Remove(args.Address);
+        if (!HasComp<GasVentPumpComponent>(vent) && !HasComp<GasVentScrubberComponent>(vent))
+            return;
+
+        var roles = args.Roles & AllVentRoles;
+
+        if (roles == AirlockVentRole.None)
+            ent.Comp.VentRoles.Remove(vent.Value);
         else
-            ent.Comp.VentRoles[args.Address] = args.Roles;
+            ent.Comp.VentRoles[vent.Value] = roles;
 
         UpdateConfigUi(ent);
     }
@@ -193,17 +256,21 @@ public sealed partial class AirlockControllerSystem
         if (!CheckConfigAccess(ent, args.Actor))
             return;
 
+        if (!TryGetEntity(args.Device, out var door))
+            return;
+
         if (args.Side is not { } side)
         {
-            UnassignDoor(ent, args.Address);
+            UnassignDoor(ent, door.Value);
             UpdateConfigUi(ent);
             return;
         }
 
-        if (!_deviceList.GetDeviceList(ent.Owner).TryGetValue(args.Address, out var door))
+        // Only consider actual doors
+        if (!IsValidSide(side) || !HasComp<DoorDeviceControlComponent>(door))
             return;
 
-        TryAssignDoor(ent, door, side, args.Actor);
+        TryAssignDoor(ent, door.Value, side, args.Actor);
         UpdateConfigUi(ent);
     }
 
@@ -212,10 +279,19 @@ public sealed partial class AirlockControllerSystem
         if (!CheckConfigAccess(ent, args.Actor))
             return;
 
-        if (args.Address == null)
+        if (!IsValidSide(args.Side))
+            return;
+
+        if (args.Device is not { } netSensor)
+        {
             ent.Comp.TargetSensors.Remove(args.Side);
-        else if (_deviceList.ExistsInDeviceList(ent.Owner, args.Address))
-            ent.Comp.TargetSensors[args.Side] = args.Address;
+        }
+        else if (TryGetEntity(netSensor, out var sensor)
+                 && InDeviceList(ent, sensor.Value)
+                 && HasComp<AtmosMonitorComponent>(sensor.Value))
+        {
+            ent.Comp.TargetSensors[args.Side] = sensor.Value;
+        }
 
         UpdateConfigUi(ent);
     }
@@ -223,6 +299,10 @@ public sealed partial class AirlockControllerSystem
     private void OnSetPreset(Entity<AirlockControllerComponent> ent, ref AirlockControllerSetPresetMessage args)
     {
         if (!CheckConfigAccess(ent, args.Actor))
+            return;
+
+        // Make sure the pressure makes sense, NaN check
+        if (!IsValidSide(args.Side) || !float.IsFinite(args.Pressure))
             return;
 
         var pressure = Math.Clamp(args.Pressure, 0f, Atmospherics.MaxOutputPressure);
@@ -247,6 +327,9 @@ public sealed partial class AirlockControllerSystem
     private void OnForceSide(Entity<AirlockControllerComponent> ent, ref AirlockControllerForceSideMessage args)
     {
         if (!CheckConfigAccess(ent, args.Actor))
+            return;
+
+        if (!IsValidSide(args.Side))
             return;
 
         ForceSide(ent, args.Side);

@@ -32,6 +32,8 @@ airlock-controller-stall-no-sensors = No sensors reporting from the chamber.
 airlock-controller-stall-not-progressing = Chamber pressure is not changing. Check the pipes.
 airlock-controller-stall-seal-lost = A door is open. The cycle cannot continue.
 airlock-controller-stall-not-sealing = Doors are not sealing. Check their power.
+airlock-controller-stall-missing-doors = Needs a door assigned to each side.
+airlock-controller-stall-not-opening = The doors will not open. Check their power.
 
 # Config window
 

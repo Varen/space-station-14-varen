@@ -79,6 +79,8 @@ public sealed partial class AirlockControllerWindow : FancyWindow
         AirlockStallReason.NotProgressing => "airlock-controller-stall-not-progressing",
         AirlockStallReason.SealLost => "airlock-controller-stall-seal-lost",
         AirlockStallReason.NotSealing => "airlock-controller-stall-not-sealing",
+        AirlockStallReason.MissingDoors => "airlock-controller-stall-missing-doors",
+        AirlockStallReason.NotOpening => "airlock-controller-stall-not-opening",
         _ => "airlock-controller-stall-not-progressing",
     };
 }

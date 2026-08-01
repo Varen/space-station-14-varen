@@ -46,9 +46,10 @@ public sealed partial class AirlockControllerComponent : Component
 
     /// <summary>
     ///     Configuration mode. Unlocks everything and freezes the controller, for use while installing.
+    ///     Starts on since a just made controller has no idea what the right side is
     /// </summary>
     [DataField]
-    public bool MaintenanceMode;
+    public bool MaintenanceMode = true;
 
     /// <summary>
     ///     Set when the controller needs to put the doors back into the layout expected at Idle in CurrentSide
@@ -70,13 +71,13 @@ public sealed partial class AirlockControllerComponent : Component
     ///     Which task each vent is used for
     /// </summary>
     [DataField]
-    public Dictionary<string, AirlockVentRole> VentRoles = new();
+    public Dictionary<EntityUid, AirlockVentRole> VentRoles = new();
 
     /// <summary>
     ///     Which side each door belongs to.
     /// </summary>
     [DataField]
-    public Dictionary<string, AirlockSide> DoorRoles = new();
+    public Dictionary<EntityUid, AirlockSide> DoorRoles = new();
 
     /// <summary>
     ///     All doors must report status before continuing
@@ -87,7 +88,7 @@ public sealed partial class AirlockControllerComponent : Component
     ///     If set, these will be used to match target pressure on them for each side. Otherwise, we use presets.
     /// </summary>
     [DataField]
-    public Dictionary<AirlockSide, string> TargetSensors = new();
+    public Dictionary<AirlockSide, EntityUid> TargetSensors = new();
 
     #endregion
 

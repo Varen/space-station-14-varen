@@ -54,6 +54,15 @@
 
 - type: construction
   parent: BaseAtmos
+  id: AirlockControllerFixture
+  graph: AirlockController
+  targetNode: airlock_controller
+  canBuildInImpassable: true
+  conditions:
+  - !type:WallmountCondition
+
+- type: construction
+  parent: BaseAtmos
   id: FireAlarm
   graph: FireAlarm
   targetNode: fire_alarm

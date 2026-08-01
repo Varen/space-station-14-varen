@@ -12,11 +12,11 @@ namespace Content.Client.Atmos.AirlockController.UI.Widgets;
 [GenerateTypedNameReferences]
 public sealed partial class AirlockDeviceRow : BoxContainer
 {
-    public Action<string, AirlockSide?>? OnDoorSideChanged;
-    public Action<string, AirlockVentRole>? OnVentRolesChanged;
-    public Action<AirlockSide, string?>? OnTargetSensorChanged;
+    public Action<NetEntity, AirlockSide?>? OnDoorSideChanged;
+    public Action<NetEntity, AirlockVentRole>? OnVentRolesChanged;
+    public Action<AirlockSide, NetEntity?>? OnTargetSensorChanged;
 
-    private string _address = string.Empty;
+    private NetEntity _device;
     private AirlockVentRole _roles;
     private AirlockSide? _sensorTarget;
 
@@ -24,12 +24,12 @@ public sealed partial class AirlockDeviceRow : BoxContainer
     {
         RobustXamlLoader.Load(this);
 
-        DoorSide.OnSideSelected += side => OnDoorSideChanged?.Invoke(_address, side);
+        DoorSide.OnSideSelected += side => OnDoorSideChanged?.Invoke(_device, side);
 
         SensorSide.OnSideSelected += side =>
         {
             if (side is { } target)
-                OnTargetSensorChanged?.Invoke(target, _address);
+                OnTargetSensorChanged?.Invoke(target, _device);
             else if (_sensorTarget is { } was)
                 // Clearing luts it back on its preset.
                 OnTargetSensorChanged?.Invoke(was, null);
@@ -48,13 +48,13 @@ public sealed partial class AirlockDeviceRow : BoxContainer
         check.OnToggled += args =>
         {
             _roles = args.Pressed ? _roles | role : _roles & ~role;
-            OnVentRolesChanged?.Invoke(_address, _roles);
+            OnVentRolesChanged?.Invoke(_device, _roles);
         };
     }
 
     public void SetData(AirlockDeviceEntry device)
     {
-        _address = device.Address;
+        _device = device.Device;
         _roles = device.VentRoles;
         _sensorTarget = device.SensorTargetFor;
 

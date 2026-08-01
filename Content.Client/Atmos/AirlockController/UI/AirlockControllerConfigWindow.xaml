@@ -38,6 +38,10 @@
 
         <!-- Maaints mode / force side mode-->
         <CheckBox Name="CMaintenanceCheck" Text="{Loc 'airlock-controller-config-maintenance'}" />
+        <BoxContainer Orientation="Horizontal" Margin="0 0 0 2">
+            <Label Text="{Loc 'airlock-controller-ui-side-label'}" Margin="0 0 4 0" />
+            <RichTextLabel Name="CCurrentSideLabel" HorizontalExpand="True" />
+        </BoxContainer>
         <BoxContainer Orientation="Horizontal">
             <Label Text="{Loc 'airlock-controller-config-force-label'}" Margin="0 0 4 0" />
             <Button Name="CForceAButton" Text="{Loc 'airlock-controller-side-a'}" HorizontalExpand="True" Margin="0 0 2 0" />
