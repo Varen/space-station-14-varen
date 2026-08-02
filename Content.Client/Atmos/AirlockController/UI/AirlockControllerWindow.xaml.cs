@@ -37,8 +37,8 @@ public sealed partial class AirlockControllerWindow : FancyWindow
     {
         var idle = state.State == AirlockCycleState.Idle;
 
-        CStateLabel.SetMarkup(Loc.GetString(StateKey(state.State)));
-        CSideLabel.SetMarkup(Loc.GetString(SideKey(state.CurrentSide)));
+        CStateLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.StateKey(state.State)));
+        CSideLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.SideKey(state.CurrentSide)));
         CPressureLabel.SetMarkup(state.ChamberPressure is { } pressure
             ? Loc.GetString("airlock-controller-ui-pressure-value", ("pressure", $"{pressure:0.#}"))
             : Loc.GetString("airlock-controller-ui-pressure-unknown"));
@@ -46,7 +46,7 @@ public sealed partial class AirlockControllerWindow : FancyWindow
         // A stall reports the problem without state change
         CStallStripe.Visible = state.StallReason != null;
         if (state.StallReason is { } reason)
-            CStallLabel.SetMarkup(Loc.GetString(StallKey(reason)));
+            CStallLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.StallKey(reason)));
 
         // You can only cycle to the side you aren't already at
         CCycleAButton.Disabled = !idle || state.CurrentSide == AirlockSide.A || state.MaintenanceMode;
@@ -58,29 +58,4 @@ public sealed partial class AirlockControllerWindow : FancyWindow
             : "airlock-controller-ui-cancel");
     }
 
-    private static string StateKey(AirlockCycleState state) => state switch
-    {
-        AirlockCycleState.Idle => "airlock-controller-state-idle",
-        AirlockCycleState.Sealing => "airlock-controller-state-sealing",
-        AirlockCycleState.Evacuating => "airlock-controller-state-evacuating",
-        AirlockCycleState.Filling => "airlock-controller-state-filling",
-        AirlockCycleState.Unsealing => "airlock-controller-state-unsealing",
-        _ => "airlock-controller-state-idle",
-    };
-
-    private static string SideKey(AirlockSide side) => side == AirlockSide.A
-        ? "airlock-controller-side-a"
-        : "airlock-controller-side-b";
-
-    private static string StallKey(AirlockStallReason reason) => reason switch
-    {
-        AirlockStallReason.NoUsableVent => "airlock-controller-stall-no-vent",
-        AirlockStallReason.NoSensors => "airlock-controller-stall-no-sensors",
-        AirlockStallReason.NotProgressing => "airlock-controller-stall-not-progressing",
-        AirlockStallReason.SealLost => "airlock-controller-stall-seal-lost",
-        AirlockStallReason.NotSealing => "airlock-controller-stall-not-sealing",
-        AirlockStallReason.MissingDoors => "airlock-controller-stall-missing-doors",
-        AirlockStallReason.NotOpening => "airlock-controller-stall-not-opening",
-        _ => "airlock-controller-stall-not-progressing",
-    };
 }

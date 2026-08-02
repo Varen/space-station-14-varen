@@ -16,6 +16,7 @@ using Content.Shared.DeviceNetwork.Components;
 using Content.Shared.DeviceNetwork.Events;
 using Content.Shared.DeviceNetwork.Systems;
 using Content.Shared.Doors;
+using Content.Shared.Examine;
 using Content.Shared.Popups;
 using Robust.Shared.Audio;
 using Robust.Shared.Audio.Systems;
@@ -39,6 +40,8 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     [Dependency] private SharedPopupSystem _popup = default!;
     [Dependency] private SharedUserInterfaceSystem _ui = default!;
     [Dependency] private SharedAudioSystem _audio = default!;
+    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    [Dependency] private SharedPointLightSystem _pointLight = default!;
     [Dependency] private IGameTiming _timing = default!;
 
     public override void Initialize()
@@ -49,6 +52,7 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         SubscribeLocalEvent<AirlockControllerComponent, DeviceNetworkPacketEvent>(OnPacketRecv);
         SubscribeLocalEvent<AirlockControllerComponent, DeviceListUpdateEvent>(OnDeviceListUpdate);
         SubscribeLocalEvent<AirlockControllerComponent, SignalReceivedEvent>(OnSignalReceived);
+        SubscribeLocalEvent<AirlockControllerComponent, ExaminedEvent>(OnExamine);
 
         InitializeUi();
     }
@@ -59,6 +63,32 @@ public sealed partial class AirlockControllerSystem : EntitySystem
 
         _signal.EnsureSinkPorts(ent, comp.CycleToAPort, comp.CycleToBPort);
         _signal.EnsureSourcePorts(ent, comp.StateAPort, comp.StateBPort, comp.CyclingPort);
+    }
+
+    private void OnExamine(Entity<AirlockControllerComponent> ent, ref ExaminedEvent args)
+    {
+        if (!args.IsInDetailsRange)
+            return;
+
+        var comp = ent.Comp;
+
+        if (comp.MaintenanceMode)
+        {
+            args.PushMarkup(Loc.GetString("airlock-controller-examine-maintenance"));
+            return;
+        }
+
+        args.PushMarkup(Loc.GetString("airlock-controller-examine-state",
+            ("state", Loc.GetString(AirlockControllerLocale.StateKey(comp.State)))));
+
+        args.PushMarkup(Loc.GetString("airlock-controller-examine-side",
+            ("side", Loc.GetString(AirlockControllerLocale.SideKey(comp.CurrentSide)))));
+
+        if (comp.StallReason is { } reason)
+        {
+            args.PushMarkup(Loc.GetString("airlock-controller-examine-error",
+                ("reason", Loc.GetString(AirlockControllerLocale.StallKey(reason)))));
+        }
     }
 
     #region Device network
@@ -475,6 +505,8 @@ public sealed partial class AirlockControllerSystem : EntitySystem
             comp.NextUpdate = now + comp.UpdateInterval;
 
             PruneCaches((uid, comp));
+            UpdateAppearance((uid, comp));
+            UpdateCycleSound((uid, comp), now);
 
             var cycling = !comp.MaintenanceMode && comp.State != AirlockCycleState.Idle;
             var uiOpen = _ui.IsUiOpen(uid, AirlockControllerUiKey.Key)
@@ -1073,6 +1105,55 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         _signal.SendSignal(ent, comp.CyclingPort, !idle && comp.EmergencyLightsEnabled);
         _signal.SendSignal(ent, comp.StateAPort, idle && comp.CurrentSide == AirlockSide.A);
         _signal.SendSignal(ent, comp.StateBPort, idle && comp.CurrentSide == AirlockSide.B);
+
+        UpdateAppearance(ent);
+    }
+
+    private void UpdateAppearance(Entity<AirlockControllerComponent> ent)
+    {
+        var comp = ent.Comp;
+
+        var display = comp.MaintenanceMode
+            ? AirlockControllerDisplay.Maintenance
+            : comp.CurrentSide == AirlockSide.A
+                ? AirlockControllerDisplay.SideA
+                : AirlockControllerDisplay.SideB;
+
+        _appearance.SetData(ent, AirlockControllerVisuals.State, comp.State);
+        _appearance.SetData(ent, AirlockControllerVisuals.Display, display);
+        _appearance.SetData(ent, AirlockControllerVisuals.Error, comp.StallReason != null);
+        _appearance.SetData(ent, AirlockControllerVisuals.Cycling, IsWarning(ent));
+
+        _pointLight.SetEnabled(ent, IsWarning(ent));
+    }
+
+    /// <summary>
+    ///     Checks for wire muting light and sound.
+    /// </summary>
+    private static bool IsWarning(Entity<AirlockControllerComponent> ent)
+    {
+        var comp = ent.Comp;
+
+        return comp.EmergencyLightsEnabled
+               && !comp.MaintenanceMode
+               && comp.State != AirlockCycleState.Idle;
+    }
+
+    private void UpdateCycleSound(Entity<AirlockControllerComponent> ent, TimeSpan now)
+    {
+        var comp = ent.Comp;
+
+        if (!IsWarning(ent))
+        {
+            comp.NextCycleSound = TimeSpan.Zero;
+            return;
+        }
+
+        if (now < comp.NextCycleSound)
+            return;
+
+        comp.NextCycleSound = now + comp.CycleSoundInterval;
+        _audio.PlayPvs(comp.CycleSound, ent, comp.CycleSound.Params.AddVolume(comp.CycleVolume));
     }
 
     #endregion

@@ -35,6 +35,13 @@ airlock-controller-stall-not-sealing = Doors are not sealing. Check their power.
 airlock-controller-stall-missing-doors = Needs a door assigned to each side.
 airlock-controller-stall-not-opening = The doors will not open. Check their power.
 
+# Examine
+
+airlock-controller-examine-state = Status: [color=white]{$state}[/color]
+airlock-controller-examine-side = Chamber holds [color=white]{$side}[/color]
+airlock-controller-examine-error = [color=red]{$reason}[/color]
+airlock-controller-examine-maintenance = [color=yellow]Under maintenance.[/color]
+
 # Config window
 
 airlock-controller-config-ui-title = Airlock Controller Configuration

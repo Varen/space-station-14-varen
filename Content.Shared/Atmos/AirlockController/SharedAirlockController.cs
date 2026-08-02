@@ -102,6 +102,69 @@ public enum AirlockStallReason : byte
     NotOpening = 6,
 }
 
+/// <summary>
+///     Shared by the status window and the examine text.
+/// </summary>
+public static class AirlockControllerLocale
+{
+    public static string StateKey(AirlockCycleState state) => state switch
+    {
+        AirlockCycleState.Sealing => "airlock-controller-state-sealing",
+        AirlockCycleState.Evacuating => "airlock-controller-state-evacuating",
+        AirlockCycleState.Filling => "airlock-controller-state-filling",
+        AirlockCycleState.Unsealing => "airlock-controller-state-unsealing",
+        _ => "airlock-controller-state-idle",
+    };
+
+    public static string SideKey(AirlockSide side) => side == AirlockSide.B
+        ? "airlock-controller-side-b"
+        : "airlock-controller-side-a";
+
+    public static string StallKey(AirlockStallReason reason) => reason switch
+    {
+        AirlockStallReason.NoUsableVent => "airlock-controller-stall-no-vent",
+        AirlockStallReason.NoSensors => "airlock-controller-stall-no-sensors",
+        AirlockStallReason.SealLost => "airlock-controller-stall-seal-lost",
+        AirlockStallReason.NotSealing => "airlock-controller-stall-not-sealing",
+        AirlockStallReason.MissingDoors => "airlock-controller-stall-missing-doors",
+        AirlockStallReason.NotOpening => "airlock-controller-stall-not-opening",
+        _ => "airlock-controller-stall-not-progressing",
+    };
+}
+
+/// <summary>
+///     Appearance keys.
+/// </summary>
+[Serializable, NetSerializable]
+public enum AirlockControllerVisuals : byte
+{
+    State, //AirlockCycleState
+    Display, // AirlockControllerDisplay
+    Error, // bool
+    Cycling, // bool
+}
+
+/// <summary>
+///     Shows current side or Maint mode
+/// </summary>
+[Serializable, NetSerializable]
+public enum AirlockControllerDisplay : byte
+{
+    SideA,
+    SideB,
+    Maintenance,
+}
+
+[Serializable, NetSerializable]
+public enum AirlockControllerVisualLayers : byte
+{
+    Base,
+    State,
+    Display,
+    Error,
+    Light,
+}
+
 [Serializable, NetSerializable]
 public enum AirlockControllerUiKey : byte
 {

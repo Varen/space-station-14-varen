@@ -3,6 +3,7 @@ using Content.Shared.Atmos.AirlockController;
 using Content.Shared.Atmos.Monitor;
 using Content.Shared.Atmos.Piping.Unary.Components;
 using Content.Shared.DeviceLinking;
+using Robust.Shared.Audio;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
 namespace Content.Server.Atmos.AirlockController.Components;
@@ -186,6 +187,25 @@ public sealed partial class AirlockControllerComponent : Component
     /// </summary>
     [DataField]
     public bool EmergencyLightsEnabled = true;
+
+    #region Cycle warning
+
+    [DataField]
+    public SoundSpecifier CycleSound = new SoundPathSpecifier("/Audio/Machines/alarm.ogg");
+
+    [DataField]
+    public float CycleVolume = -10f;
+
+    /// <summary>
+    ///     Continues the alarm until error cleared
+    /// </summary>
+    [DataField]
+    public TimeSpan CycleSoundInterval = TimeSpan.FromSeconds(6);
+
+    [ViewVariables]
+    public TimeSpan NextCycleSound;
+
+    #endregion
 }
 
 /// <summary>
