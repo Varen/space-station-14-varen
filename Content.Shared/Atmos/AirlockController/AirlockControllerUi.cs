@@ -28,8 +28,16 @@ public sealed class AirlockDeviceEntry
     public AirlockVentRole VentRoles;
 
     public AirlockSide? DoorSide;
+}
 
-    public AirlockSide? SensorTargetFor;
+/// <summary>
+///     Sensor option to be used outside the chamber on a side
+/// </summary>
+[Serializable, NetSerializable]
+public sealed class AirlockSensorOption
+{
+    public NetEntity Device;
+    public string Name = string.Empty;
 }
 
 /// <summary>
@@ -66,11 +74,18 @@ public sealed class AirlockControllerConfigUiState : BoundUserInterfaceState
     public AirlockSide CurrentSide;
 
     /// <summary>
-    ///     Set when a side follows a sensor
+    ///     Everything a side can be pointed at, Custom pressure is null.
     /// </summary>
-    public string? TargetSensorNameA;
+    public List<AirlockSensorOption> Sensors = new();
 
-    public string? TargetSensorNameB;
+    public NetEntity? TargetSensorA;
+    public NetEntity? TargetSensorB;
+
+    /// <summary>
+    ///     What the chosen sensor reads, shown in place of the input.
+    /// </summary>
+    public float? TargetPressureA;
+    public float? TargetPressureB;
 }
 
 [Serializable, NetSerializable]

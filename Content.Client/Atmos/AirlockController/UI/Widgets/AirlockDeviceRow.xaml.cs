@@ -14,26 +14,15 @@ public sealed partial class AirlockDeviceRow : BoxContainer
 {
     public Action<NetEntity, AirlockSide?>? OnDoorSideChanged;
     public Action<NetEntity, AirlockVentRole>? OnVentRolesChanged;
-    public Action<AirlockSide, NetEntity?>? OnTargetSensorChanged;
 
     private NetEntity _device;
     private AirlockVentRole _roles;
-    private AirlockSide? _sensorTarget;
 
     public AirlockDeviceRow(AirlockDeviceEntry device)
     {
         RobustXamlLoader.Load(this);
 
         DoorSide.OnSideSelected += side => OnDoorSideChanged?.Invoke(_device, side);
-
-        SensorSide.OnSideSelected += side =>
-        {
-            if (side is { } target)
-                OnTargetSensorChanged?.Invoke(target, _device);
-            else if (_sensorTarget is { } was)
-                // Clearing luts it back on its preset.
-                OnTargetSensorChanged?.Invoke(was, null);
-        };
 
         BindRole(VentACheck, AirlockVentRole.VentA);
         BindRole(SiphonACheck, AirlockVentRole.SiphonA);
@@ -56,16 +45,12 @@ public sealed partial class AirlockDeviceRow : BoxContainer
     {
         _device = device.Device;
         _roles = device.VentRoles;
-        _sensorTarget = device.SensorTargetFor;
 
         HeaderLabel.SetMarkup(Loc.GetString("airlock-controller-config-device-header",
             ("name", device.Name), ("address", device.Address)));
 
         DoorBox.Visible = device.IsDoor;
         DoorSide.SetSelection(device.DoorSide);
-
-        SensorBox.Visible = device.IsSensor;
-        SensorSide.SetSelection(device.SensorTargetFor);
 
         VentBox.Visible = device.IsVent || device.IsScrubber;
 

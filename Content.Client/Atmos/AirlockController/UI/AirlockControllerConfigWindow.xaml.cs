@@ -21,6 +21,13 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
 
     private readonly Dictionary<NetEntity, AirlockDeviceRow> _rows = new();
 
+    private const int CustomId = -1;
+
+    /// <summary>
+    ///     Sensor picker order for A nad B sides
+    /// </summary>
+    private List<NetEntity> _options = new();
+
     public AirlockControllerConfigWindow()
     {
         RobustXamlLoader.Load(this);
@@ -37,12 +44,26 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
 
         CForceAButton.OnPressed += _ => ForceSideRequested?.Invoke(AirlockSide.A);
         CForceBButton.OnPressed += _ => ForceSideRequested?.Invoke(AirlockSide.B);
+
+        BindSensorPicker(CSensorA, AirlockSide.A);
+        BindSensorPicker(CSensorB, AirlockSide.B);
+    }
+
+    private void BindSensorPicker(OptionButton picker, AirlockSide side)
+    {
+        picker.OnItemSelected += args =>
+        {
+            picker.SelectId(args.Id);
+            TargetSensorChanged?.Invoke(side, args.Id == CustomId ? null : _options[args.Id]);
+        };
     }
 
     public void UpdateState(AirlockControllerConfigUiState state)
     {
-        ApplyPreset(CPresetA, CSensorALabel, state.PresetPressureA, state.TargetSensorNameA);
-        ApplyPreset(CPresetB, CSensorBLabel, state.PresetPressureB, state.TargetSensorNameB);
+        RebuildSensorPickers(state);
+
+        ApplyPreset(CPresetA, CSensorALabel, state.PresetPressureA, state.TargetSensorA, state.TargetPressureA);
+        ApplyPreset(CPresetB, CSensorBLabel, state.PresetPressureB, state.TargetSensorB, state.TargetPressureB);
 
         CMaintenanceCheck.Pressed = state.MaintenanceMode;
         CAddressLabel.SetMarkup(state.Address);
@@ -73,7 +94,6 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
             row = new AirlockDeviceRow(device);
             row.OnDoorSideChanged += (uid, side) => DoorSideChanged?.Invoke(uid, side);
             row.OnVentRolesChanged += (uid, roles) => VentRolesChanged?.Invoke(uid, roles);
-            row.OnTargetSensorChanged += (side, uid) => TargetSensorChanged?.Invoke(side, uid);
 
             _rows[device.Device] = row;
             CDeviceContainer.AddChild(row);
@@ -89,9 +109,50 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
         }
     }
 
-    private static void ApplyPreset(FloatSpinBox box, RichTextLabel label, float pressure, string? sensorName)
+    /// <summary>
+    ///     Custom above pickers, sensors in list order
+    /// </summary>
+    private void RebuildSensorPickers(AirlockControllerConfigUiState state)
     {
-        var following = sensorName != null;
+        if (_options.Count == state.Sensors.Count
+            && !_options.Where((device, i) => device != state.Sensors[i].Device).Any())
+        {
+            SelectSensor(CSensorA, state.TargetSensorA);
+            SelectSensor(CSensorB, state.TargetSensorB);
+            return;
+        }
+
+        _options = state.Sensors.Select(sensor => sensor.Device).ToList();
+
+        foreach (var picker in new[] { CSensorA, CSensorB })
+        {
+            picker.Clear();
+            picker.AddItem(Loc.GetString("airlock-controller-config-sensor-custom"), CustomId);
+
+            for (var i = 0; i < state.Sensors.Count; i++)
+            {
+                picker.AddItem(state.Sensors[i].Name, i);
+            }
+        }
+
+        SelectSensor(CSensorA, state.TargetSensorA);
+        SelectSensor(CSensorB, state.TargetSensorB);
+    }
+
+    private void SelectSensor(OptionButton picker, NetEntity? selected)
+    {
+        var index = selected is { } device ? _options.IndexOf(device) : -1;
+        picker.SelectId(index < 0 ? CustomId : index);
+    }
+
+    private static void ApplyPreset(
+        FloatSpinBox box,
+        RichTextLabel label,
+        float pressure,
+        NetEntity? sensor,
+        float? reading)
+    {
+        var following = sensor != null;
 
         // Hide input field when sensor mode, and vice versa
         box.Visible = !following;
@@ -99,7 +160,9 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
 
         if (following)
         {
-            label.SetMarkup(sensorName!);
+            label.SetMarkup(reading is { } value
+                ? Loc.GetString("airlock-controller-ui-pressure-value", ("pressure", $"{value:0.#}"))
+                : Loc.GetString("airlock-controller-ui-pressure-unknown"));
             return;
         }
 

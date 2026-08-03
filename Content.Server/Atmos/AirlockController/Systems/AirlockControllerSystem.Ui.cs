@@ -134,6 +134,7 @@ public sealed partial class AirlockControllerSystem
         var comp = ent.Comp;
         var devices = _deviceList.GetDeviceList(ent.Owner);
         var entries = new List<AirlockDeviceEntry>();
+        var sensors = new List<AirlockSensorOption>();
 
         foreach (var (address, uid) in devices)
         {
@@ -155,14 +156,20 @@ public sealed partial class AirlockControllerSystem
             if (comp.DoorRoles.TryGetValue(uid, out var side))
                 entry.DoorSide = side;
 
-            foreach (var (targetSide, targetSensor) in comp.TargetSensors)
+            // Vents inherently always inside
+            if (entry.IsSensor && !entry.IsVent && !entry.IsScrubber)
             {
-                if (targetSensor == uid)
-                    entry.SensorTargetFor = targetSide;
+                sensors.Add(new AirlockSensorOption
+                {
+                    Device = entry.Device,
+                    Name = $"{entry.Name} ({address})",
+                });
             }
 
             entries.Add(entry);
         }
+
+        sensors.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
         entries.Sort((a, b) =>
         {
@@ -179,8 +186,11 @@ public sealed partial class AirlockControllerSystem
             PresetPressureB = comp.PresetPressureB,
             MaintenanceMode = comp.MaintenanceMode,
             CurrentSide = comp.CurrentSide,
-            TargetSensorNameA = TargetSensorName(comp, devices, AirlockSide.A),
-            TargetSensorNameB = TargetSensorName(comp, devices, AirlockSide.B),
+            Sensors = sensors,
+            TargetSensorA = BoundSensor(comp, devices, AirlockSide.A),
+            TargetSensorB = BoundSensor(comp, devices, AirlockSide.B),
+            TargetPressureA = SensorReading(comp, devices, AirlockSide.A),
+            TargetPressureB = SensorReading(comp, devices, AirlockSide.B),
         });
     }
 
@@ -201,7 +211,21 @@ public sealed partial class AirlockControllerSystem
         return device.IsSensor ? 3 : 4;
     }
 
-    private string? TargetSensorName(
+    /// <summary>
+    ///     Null puts the side back on its preset
+    /// </summary>
+    private NetEntity? BoundSensor(
+        AirlockControllerComponent comp,
+        Dictionary<string, EntityUid> devices,
+        AirlockSide side)
+    {
+        if (!comp.TargetSensors.TryGetValue(side, out var sensor) || !devices.ContainsValue(sensor))
+            return null;
+
+        return GetNetEntity(sensor);
+    }
+
+    private float? SensorReading(
         AirlockControllerComponent comp,
         Dictionary<string, EntityUid> devices,
         AirlockSide side)
@@ -209,11 +233,10 @@ public sealed partial class AirlockControllerSystem
         if (!comp.TargetSensors.TryGetValue(side, out var sensor))
             return null;
 
-        // Unbound sensor falls back to the preset
         foreach (var (address, uid) in devices)
         {
-            if (uid == sensor)
-                return $"{Name(uid)} ({address})";
+            if (uid == sensor && comp.SensorData.TryGetValue(address, out var data))
+                return data.Pressure;
         }
 
         return null;
@@ -282,15 +305,28 @@ public sealed partial class AirlockControllerSystem
         if (!IsValidSide(args.Side))
             return;
 
+        var comp = ent.Comp;
+
         if (args.Device is not { } netSensor)
         {
-            ent.Comp.TargetSensors.Remove(args.Side);
+            comp.TargetSensors.Remove(args.Side);
         }
         else if (TryGetEntity(netSensor, out var sensor)
                  && InDeviceList(ent, sensor.Value)
                  && HasComp<AtmosMonitorComponent>(sensor.Value))
         {
-            ent.Comp.TargetSensors[args.Side] = sensor.Value;
+            var other = args.Side == AirlockSide.A ? AirlockSide.B : AirlockSide.A;
+
+            // Swap sensors if picking the one on the other side
+            if (comp.TargetSensors.TryGetValue(other, out var taken) && taken == sensor.Value)
+            {
+                if (comp.TargetSensors.TryGetValue(args.Side, out var ours))
+                    comp.TargetSensors[other] = ours;
+                else
+                    comp.TargetSensors.Remove(other);
+            }
+
+            comp.TargetSensors[args.Side] = sensor.Value;
         }
 
         UpdateConfigUi(ent);

@@ -15,9 +15,4 @@
         <CheckBox Name="VentBCheck" Text="{Loc 'airlock-controller-config-vent-b'}" Margin="0 0 6 0" />
         <CheckBox Name="SiphonBCheck" Text="{Loc 'airlock-controller-config-siphon-b'}" Margin="0 0 6 0" />
     </BoxContainer>
-
-    <BoxContainer Name="SensorBox" Orientation="Horizontal" Visible="False">
-        <Label Text="{Loc 'airlock-controller-config-target-sensor'}" Margin="0 0 4 0" />
-        <widgets:AirlockSideSelector Name="SensorSide" HorizontalExpand="True" />
-    </BoxContainer>
 </BoxContainer>
