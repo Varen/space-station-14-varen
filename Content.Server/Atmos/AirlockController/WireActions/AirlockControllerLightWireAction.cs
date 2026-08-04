@@ -1,4 +1,3 @@
-using Content.Server.Atmos.AirlockController.Components;
 using Content.Server.Atmos.AirlockController.Systems;
 using Content.Server.Wires;
 using Content.Shared.Atmos.AirlockController;

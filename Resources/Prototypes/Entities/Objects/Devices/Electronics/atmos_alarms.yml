@@ -44,3 +44,18 @@
       - AirlockControllerElectronics
   - type: StaticPrice
     price: 61
+
+- type: entity
+  id: AirlockCyclerElectronics
+  parent: BaseElectronics
+  name: airlock cycler electronics
+  description: An electronics board used in airlock cyclers.
+  components:
+  - type: Sprite
+    sprite: Objects/Misc/module.rsi
+    state: airalarm_electronics
+  - type: Tag
+    tags:
+      - AirlockCyclerElectronics
+  - type: StaticPrice
+    price: 61

@@ -13,55 +13,100 @@ namespace Content.Client.Atmos.AirlockController.UI.Widgets;
 public sealed partial class AirlockDeviceRow : BoxContainer
 {
     public Action<NetEntity, AirlockSide?>? OnDoorSideChanged;
+    public Action<NetEntity, AirlockSide?>? OnCyclerSideChanged;
     public Action<NetEntity, AirlockVentRole>? OnVentRolesChanged;
 
     private NetEntity _device;
-    private AirlockVentRole _roles;
 
-    public AirlockDeviceRow(AirlockDeviceEntry device)
+    private bool _updating;
+
+    public AirlockDeviceRow(AirlockDeviceEntry device, AirlockVentRole roles, AirlockSide? doorSide, AirlockSide? cyclerSide)
     {
         RobustXamlLoader.Load(this);
 
-        DoorSide.OnSideSelected += side => OnDoorSideChanged?.Invoke(_device, side);
+        DoorSide.OnSideSelected += side =>
+        {
+            if (!_updating)
+                OnDoorSideChanged?.Invoke(_device, side);
+        };
 
-        BindRole(VentACheck, AirlockVentRole.VentA);
-        BindRole(SiphonACheck, AirlockVentRole.SiphonA);
-        BindRole(VentBCheck, AirlockVentRole.VentB);
-        BindRole(SiphonBCheck, AirlockVentRole.SiphonB);
+        CyclerSide.OnSideSelected += side =>
+        {
+            if (!_updating)
+                OnCyclerSideChanged?.Invoke(_device, side);
+        };
 
-        SetData(device);
+        BindRole(VentACheck);
+        BindRole(SiphonACheck);
+        BindRole(VentBCheck);
+        BindRole(SiphonBCheck);
+
+        SetData(device, roles, doorSide, cyclerSide);
     }
 
-    private void BindRole(CheckBox check, AirlockVentRole role)
+    private void BindRole(CheckBox check)
     {
-        check.OnToggled += args =>
+        check.OnToggled += _ =>
         {
-            _roles = args.Pressed ? _roles | role : _roles & ~role;
-            OnVentRolesChanged?.Invoke(_device, _roles);
+            if (!_updating)
+                OnVentRolesChanged?.Invoke(_device, ReadRoles());
         };
     }
 
-    public void SetData(AirlockDeviceEntry device)
+    /// <summary>
+    ///     Built from the boxes
+    /// </summary>
+    private AirlockVentRole ReadRoles()
     {
-        _device = device.Device;
-        _roles = device.VentRoles;
+        var roles = AirlockVentRole.None;
 
-        HeaderLabel.SetMarkup(Loc.GetString("airlock-controller-config-device-header",
-            ("name", device.Name), ("address", device.Address)));
+        if (VentACheck.Pressed)
+            roles |= AirlockVentRole.VentA;
 
-        DoorBox.Visible = device.IsDoor;
-        DoorSide.SetSelection(device.DoorSide);
+        if (SiphonACheck.Pressed)
+            roles |= AirlockVentRole.SiphonA;
 
-        VentBox.Visible = device.IsVent || device.IsScrubber;
+        if (VentBCheck.Pressed)
+            roles |= AirlockVentRole.VentB;
 
+        if (SiphonBCheck.Pressed)
+            roles |= AirlockVentRole.SiphonB;
 
-        var canRelease = device.IsVent;
-        VentACheck.Visible = canRelease;
-        VentBCheck.Visible = canRelease;
+        return roles;
+    }
 
-        VentACheck.Pressed = (device.VentRoles & AirlockVentRole.VentA) != 0;
-        SiphonACheck.Pressed = (device.VentRoles & AirlockVentRole.SiphonA) != 0;
-        VentBCheck.Pressed = (device.VentRoles & AirlockVentRole.VentB) != 0;
-        SiphonBCheck.Pressed = (device.VentRoles & AirlockVentRole.SiphonB) != 0;
+    public void SetData(AirlockDeviceEntry device, AirlockVentRole roles, AirlockSide? doorSide, AirlockSide? cyclerSide)
+    {
+        _updating = true;
+
+        try
+        {
+            _device = device.Device;
+
+            HeaderLabel.SetMarkup(Loc.GetString("airlock-controller-config-device-header",
+                ("name", device.Name), ("address", device.Address)));
+
+            DoorBox.Visible = device.IsDoor;
+            DoorSide.SetSelection(doorSide);
+
+            CyclerBox.Visible = device.IsCycler;
+            CyclerSide.SetSelection(cyclerSide);
+
+            VentBox.Visible = device.IsVent || device.IsScrubber;
+
+            // Scrubbers can only siphon
+            var canRelease = device.IsVent;
+            VentACheck.Visible = canRelease;
+            VentBCheck.Visible = canRelease;
+
+            VentACheck.Pressed = (roles & AirlockVentRole.VentA) != 0;
+            SiphonACheck.Pressed = (roles & AirlockVentRole.SiphonA) != 0;
+            VentBCheck.Pressed = (roles & AirlockVentRole.VentB) != 0;
+            SiphonBCheck.Pressed = (roles & AirlockVentRole.SiphonB) != 0;
+        }
+        finally
+        {
+            _updating = false;
+        }
     }
 }

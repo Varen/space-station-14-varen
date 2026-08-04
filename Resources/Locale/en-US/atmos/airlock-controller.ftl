@@ -50,7 +50,9 @@ airlock-controller-config-preset-b = Side B pressure (kPa)
 airlock-controller-config-preset-hint = Assign a target sensor to a side to match it instead of the pressure above.
 airlock-controller-config-device-header = [bold]{$name}[/bold] ({$address})
 airlock-controller-config-door-side = Door side:
+airlock-controller-config-cycler-side = Calls to side:
 airlock-controller-config-sensor-custom = Custom
+airlock-controller-config-sensor-pending = ~
 airlock-controller-config-none = None
 airlock-controller-config-vent-a = Vent A
 airlock-controller-config-siphon-a = Siphon A
@@ -58,3 +60,10 @@ airlock-controller-config-vent-b = Vent B
 airlock-controller-config-siphon-b = Siphon B
 airlock-controller-config-maintenance = Maintenance mode
 airlock-controller-config-force-label = Force chamber to:
+
+# Cycler panel
+
+airlock-cycler-ui-title = Airlock Cycler
+airlock-cycler-ui-cycle = Call airlock
+airlock-cycler-ui-unbound = Not assigned
+airlock-cycler-examine-unbound = [color=yellow]No controller is using this.[/color]

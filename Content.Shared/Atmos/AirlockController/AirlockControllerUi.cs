@@ -24,10 +24,7 @@ public sealed class AirlockDeviceEntry
 
     public bool IsSensor;
     public bool IsDoor;
-
-    public AirlockVentRole VentRoles;
-
-    public AirlockSide? DoorSide;
+    public bool IsCycler;
 }
 
 /// <summary>
@@ -57,7 +54,7 @@ public sealed class AirlockControllerUiState : BoundUserInterfaceState
 }
 
 /// <summary>
-///     Configuration view status.
+///     Configuration view status. Only not editable, the rest is predicted
 /// </summary>
 [Serializable, NetSerializable]
 public sealed class AirlockControllerConfigUiState : BoundUserInterfaceState
@@ -68,18 +65,12 @@ public sealed class AirlockControllerConfigUiState : BoundUserInterfaceState
 
     public int DoorCount;
 
-    public float PresetPressureA;
-    public float PresetPressureB;
-    public bool MaintenanceMode;
     public AirlockSide CurrentSide;
 
     /// <summary>
     ///     Everything a side can be pointed at, Custom pressure is null.
     /// </summary>
     public List<AirlockSensorOption> Sensors = new();
-
-    public NetEntity? TargetSensorA;
-    public NetEntity? TargetSensorB;
 
     /// <summary>
     ///     What the chosen sensor reads, shown in place of the input.
@@ -130,6 +121,20 @@ public sealed class AirlockControllerSetDoorSideMessage : BoundUserInterfaceMess
     public AirlockSide? Side;
 
     public AirlockControllerSetDoorSideMessage(NetEntity device, AirlockSide? side)
+    {
+        Device = device;
+        Side = side;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class AirlockControllerSetCyclerSideMessage : BoundUserInterfaceMessage
+{
+    public NetEntity Device;
+
+    public AirlockSide? Side;
+
+    public AirlockControllerSetCyclerSideMessage(NetEntity device, AirlockSide? side)
     {
         Device = device;
         Side = side;

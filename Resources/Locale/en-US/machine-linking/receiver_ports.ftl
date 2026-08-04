@@ -89,10 +89,3 @@ signal-port-description-logic-enable = Only loads the input signal into the memo
 
 signal-port-name-logic-random-input = Input Signal
 signal-port-description-logic-random-input = Receives any signal to trigger a random output.
-
-signal-port-name-airlock-cycle-to-a = Cycle to side A
-signal-port-description-airlock-cycle-to-a = Requests that the airlock cycle its chamber to side A. Ignored unless the controller is idle on the other side.
-
-signal-port-name-airlock-cycle-to-b = Cycle to side B
-signal-port-description-airlock-cycle-to-b = Requests that the airlock cycle its chamber to side B. Ignored unless the controller is idle on the other side.
-

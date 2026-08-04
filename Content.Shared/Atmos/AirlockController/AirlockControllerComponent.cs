@@ -1,19 +1,21 @@
-using Content.Shared.Atmos;
-using Content.Shared.Atmos.AirlockController;
 using Content.Shared.Atmos.Monitor;
 using Content.Shared.Atmos.Piping.Unary.Components;
 using Content.Shared.DeviceLinking;
 using Robust.Shared.Audio;
+using Robust.Shared.GameStates;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
-namespace Content.Server.Atmos.AirlockController.Components;
+namespace Content.Shared.Atmos.AirlockController;
 
 /// <summary>
 ///     A controller that cycles an airlock's atmosphere
 ///     Uses vents, sensors and doors, with the device network.
 ///     Has signals for other player use
 /// </summary>
-[RegisterComponent]
+/// <remarks>
+///     Config is shared / predicted, the cycle is server-side
+/// </remarks>
+[RegisterComponent, NetworkedComponent, AutoGenerateComponentState(true)]
 public sealed partial class AirlockControllerComponent : Component
 {
     #region Cycle state
@@ -49,7 +51,7 @@ public sealed partial class AirlockControllerComponent : Component
     ///     Configuration mode. Unlocks everything and freezes the controller, for use while installing.
     ///     Starts on since a just made controller has no idea what the right side is
     /// </summary>
-    [DataField]
+    [DataField, AutoNetworkedField]
     public bool MaintenanceMode = true;
 
     /// <summary>
@@ -71,14 +73,20 @@ public sealed partial class AirlockControllerComponent : Component
     /// <summary>
     ///     Which task each vent is used for
     /// </summary>
-    [DataField]
+    [DataField, AutoNetworkedField]
     public Dictionary<EntityUid, AirlockVentRole> VentRoles = new();
 
     /// <summary>
     ///     Which side each door belongs to.
     /// </summary>
-    [DataField]
+    [DataField, AutoNetworkedField]
     public Dictionary<EntityUid, AirlockSide> DoorRoles = new();
+
+    /// <summary>
+    ///     Which side each cycler panel calls the chamber to.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public Dictionary<EntityUid, AirlockSide> CyclerRoles = new();
 
     /// <summary>
     ///     All doors must report status before continuing
@@ -88,7 +96,7 @@ public sealed partial class AirlockControllerComponent : Component
     /// <summary>
     ///     If set, these will be used to match target pressure on them for each side. Otherwise, we use presets.
     /// </summary>
-    [DataField]
+    [DataField, AutoNetworkedField]
     public Dictionary<AirlockSide, EntityUid> TargetSensors = new();
 
     #endregion
@@ -98,10 +106,10 @@ public sealed partial class AirlockControllerComponent : Component
     /// <summary>
     ///     Used when no target sensor is assigned to that side.
     /// </summary>
-    [DataField]
+    [DataField, AutoNetworkedField]
     public float PresetPressureA = Atmospherics.OneAtmosphere;
 
-    [DataField]
+    [DataField, AutoNetworkedField]
     public float PresetPressureB;
 
     #endregion
@@ -147,16 +155,6 @@ public sealed partial class AirlockControllerComponent : Component
     #endregion
 
     #region Signals
-
-    /// <summary>
-    ///     Player-wired cycle requests. Not access checked — a signal is a signal; gate it
-    ///     with a lockable button if you want it restricted.
-    /// </summary>
-    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SinkPortPrototype>))]
-    public string CycleToAPort = "AirlockCycleToA";
-
-    [DataField(customTypeSerializer: typeof(PrototypeIdSerializer<SinkPortPrototype>))]
-    public string CycleToBPort = "AirlockCycleToB";
 
     /// <summary>
     ///     Held high while the chamber is at side A's atmosphere and idle.

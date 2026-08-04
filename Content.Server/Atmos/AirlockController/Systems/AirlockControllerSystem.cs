@@ -10,7 +10,6 @@ using Content.Shared.Atmos.Monitor;
 using Content.Shared.Atmos.Monitor.Components;
 using Content.Shared.Atmos.Piping.Unary.Components;
 using Content.Shared.DeviceLinking;
-using Content.Shared.DeviceLinking.Events;
 using Content.Shared.DeviceNetwork;
 using Content.Shared.DeviceNetwork.Components;
 using Content.Shared.DeviceNetwork.Events;
@@ -29,8 +28,9 @@ namespace Content.Server.Atmos.AirlockController.Systems;
 ///     Vents, sensors and doors are all device-network ents
 ///     Signals are extras for player shenanigans
 /// </summary>
-public sealed partial class AirlockControllerSystem : EntitySystem
+public sealed partial class AirlockControllerSystem : SharedAirlockControllerSystem
 {
+    [Dependency] private AirlockCyclerSystem _cycler = default!;
     [Dependency] private AtmosDeviceNetworkSystem _atmosDevNet = default!;
     [Dependency] private DeviceNetworkSystem _deviceNetwork = default!;
     [Dependency] private DeviceLinkSystem _signal = default!;
@@ -38,7 +38,6 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     [Dependency] private PowerReceiverSystem _power = default!;
     [Dependency] private AccessReaderSystem _access = default!;
     [Dependency] private SharedPopupSystem _popup = default!;
-    [Dependency] private SharedUserInterfaceSystem _ui = default!;
     [Dependency] private SharedAudioSystem _audio = default!;
     [Dependency] private SharedAppearanceSystem _appearance = default!;
     [Dependency] private SharedPointLightSystem _pointLight = default!;
@@ -51,7 +50,6 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         SubscribeLocalEvent<AirlockControllerComponent, ComponentInit>(OnInit);
         SubscribeLocalEvent<AirlockControllerComponent, DeviceNetworkPacketEvent>(OnPacketRecv);
         SubscribeLocalEvent<AirlockControllerComponent, DeviceListUpdateEvent>(OnDeviceListUpdate);
-        SubscribeLocalEvent<AirlockControllerComponent, SignalReceivedEvent>(OnSignalReceived);
         SubscribeLocalEvent<AirlockControllerComponent, ExaminedEvent>(OnExamine);
 
         InitializeUi();
@@ -61,7 +59,6 @@ public sealed partial class AirlockControllerSystem : EntitySystem
     {
         var comp = ent.Comp;
 
-        _signal.EnsureSinkPorts(ent, comp.CycleToAPort, comp.CycleToBPort);
         _signal.EnsureSourcePorts(ent, comp.StateAPort, comp.StateBPort, comp.CyclingPort);
     }
 
@@ -109,6 +106,13 @@ public sealed partial class AirlockControllerSystem : EntitySystem
             comp.ScrubberData.Remove(net.Address);
             comp.SensorData.Remove(net.Address);
             comp.DoorReports.Remove(net.Address);
+
+            // Panels cache their binding, so they need telling
+            if (comp.CyclerRoles.Remove(device))
+            {
+                OnCyclerUnassigned((ent, comp), device);
+                Dirty(ent);
+            }
         }
 
         _atmosDevNet.Register(ent, null);
@@ -168,37 +172,6 @@ public sealed partial class AirlockControllerSystem : EntitySystem
 
     #region Door assignment
 
-    /// <summary>
-    ///     Assign door to side A or B, only if you have access
-    /// </summary>
-    public bool TryAssignDoor(Entity<AirlockControllerComponent> ent, EntityUid door, AirlockSide side, EntityUid? user)
-    {
-        if (!InDeviceList(ent, door))
-            return false;
-
-        if (user != null && !IsMapping(ent) && !_access.IsAllowed(user.Value, door))
-        {
-            DenyAccess(ent, user.Value);
-            return false;
-        }
-
-        ent.Comp.DoorRoles[door] = side;
-
-        if (TryComp<DeviceNetworkComponent>(door, out var net) && !string.IsNullOrEmpty(net.Address))
-            SendDoorCommand(ent, net.Address, DoorNetworkCommands.Sync);
-
-        return true;
-    }
-
-    public void UnassignDoor(Entity<AirlockControllerComponent> ent, EntityUid door)
-    {
-        if (!ent.Comp.DoorRoles.Remove(door))
-            return;
-
-        if (TryComp<DeviceNetworkComponent>(door, out var net))
-            ent.Comp.DoorReports.Remove(net.Address);
-    }
-
     private bool InDeviceList(Entity<AirlockControllerComponent> ent, EntityUid device)
     {
         return _deviceList.GetDeviceList(ent.Owner).ContainsValue(device);
@@ -228,6 +201,7 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         PruneDeleted(comp.VentRoles);
         PruneDeletedValues(comp.TargetSensors);
         PruneDeleted(comp.DoorRoles);
+        PruneDeleted(comp.CyclerRoles);
     }
 
     private void PruneDeletedValues<TKey>(Dictionary<TKey, EntityUid> config) where TKey : notnull
@@ -380,14 +354,15 @@ public sealed partial class AirlockControllerSystem : EntitySystem
 
     #region Signals
 
-    private void OnSignalReceived(Entity<AirlockControllerComponent> ent, ref SignalReceivedEvent args)
+    /// <summary>
+    ///     A panel is just the cycle button of the side it was assigned to
+    /// </summary>
+    public bool TryRequestCycleFrom(Entity<AirlockControllerComponent> ent, EntityUid cycler, EntityUid user)
     {
-        var comp = ent.Comp;
+        if (!ent.Comp.CyclerRoles.TryGetValue(cycler, out var side))
+            return false;
 
-        if (args.Port == comp.CycleToAPort)
-            TryRequestCycle(ent, AirlockSide.A);
-        else if (args.Port == comp.CycleToBPort)
-            TryRequestCycle(ent, AirlockSide.B);
+        return TryRequestCycle(ent, side, user);
     }
 
     private bool TryRequestCycle(Entity<AirlockControllerComponent> ent, AirlockSide side, EntityUid? user = null)
@@ -509,8 +484,8 @@ public sealed partial class AirlockControllerSystem : EntitySystem
             UpdateCycleSound((uid, comp), now);
 
             var cycling = !comp.MaintenanceMode && comp.State != AirlockCycleState.Idle;
-            var uiOpen = _ui.IsUiOpen(uid, AirlockControllerUiKey.Key)
-                         || _ui.IsUiOpen(uid, AirlockControllerUiKey.Config);
+            var uiOpen = UserInterfaceSystem.IsUiOpen(uid, AirlockControllerUiKey.Key)
+                         || UserInterfaceSystem.IsUiOpen(uid, AirlockControllerUiKey.Config);
 
             if (cycling || uiOpen)
                 SyncAtmosDevices((uid, comp));
@@ -1125,6 +1100,32 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         _appearance.SetData(ent, AirlockControllerVisuals.Cycling, IsWarning(ent));
 
         _pointLight.SetEnabled(ent, IsWarning(ent));
+
+        // Panels show whatever we show
+        UpdateCyclers(ent);
+    }
+
+    /// <summary>
+    ///     Pushes our state to the panels, which is also what binds them
+    /// </summary>
+    private void UpdateCyclers(Entity<AirlockControllerComponent> ent)
+    {
+        var comp = ent.Comp;
+
+        if (comp.CyclerRoles.Count == 0)
+            return;
+
+        var pressure = TryGetChamberPressure(ent, out var reading) ? reading : (float?)null;
+        var warning = IsWarning(ent);
+
+        foreach (var device in _deviceList.GetDeviceList(ent.Owner).Values)
+        {
+            if (comp.CyclerRoles.TryGetValue(device, out var side)
+                && TryComp<AirlockCyclerComponent>(device, out var panel))
+            {
+                _cycler.SetStatus((device, panel), ent, side, pressure, warning);
+            }
+        }
     }
 
     /// <summary>
@@ -1200,12 +1201,14 @@ public sealed partial class AirlockControllerSystem : EntitySystem
         UpdateOutputs(ent);
     }
 
-    public void SetMaintenanceMode(Entity<AirlockControllerComponent> ent, bool enabled)
+    /// <summary>
+    ///     Runs after the flag is already set, shared handler will predict
+    /// </summary>
+    private void ApplyMaintenanceMode(Entity<AirlockControllerComponent> ent)
     {
         var comp = ent.Comp;
-        comp.MaintenanceMode = enabled;
 
-        if (enabled)
+        if (comp.MaintenanceMode)
         {
             StopVents(ent);
             comp.CancelRequested = false;

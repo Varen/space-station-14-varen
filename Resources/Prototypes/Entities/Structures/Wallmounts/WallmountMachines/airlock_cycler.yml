@@ -1,8 +1,8 @@
 - type: entity
   parent: BaseWallmountMachine
-  id: AirlockController
-  name: airlock controller
-  description: Cycles an airlock's atmosphere so the air doesn't go out the door with you.
+  id: AirlockCycler
+  name: airlock cycler
+  description: Calls the airlock's chamber over to your side so you can get in.
   components:
   - type: StationAiWhitelist
   - type: Electrified
@@ -12,60 +12,36 @@
     deviceNetId: AtmosDevices
     receiveFrequencyId: AtmosMonitor
     transmitFrequencyId: AtmosMonitor
-    prefix: device-address-prefix-airlock-controller
-    sendBroadcastAttemptEvent: true
+    prefix: device-address-prefix-airlock-cycler
   - type: WiredNetworkConnection
   - type: WirelessNetworkConnection
     range: 200
-  - type: DeviceList
   - type: DeviceNetworkRequiresPower
-  - type: DeviceLinkSource
-    ports:
-    - AirlockStateA
-    - AirlockStateB
-    - AirlockCycling
-    lastSignals:
-      AirlockStateA: true
-      AirlockStateB: false
-      AirlockCycling: false
-  - type: AtmosDevice
-  - type: AirlockController
+  - type: AirlockCycler
   - type: Clickable
   - type: InteractionOutline
   - type: UserInterface
     interfaces:
-      enum.AirlockControllerUiKey.Key:
-        type: AirlockControllerBoundUserInterface
-      enum.AirlockControllerUiKey.Config:
-        type: AirlockControllerConfigBoundUserInterface
-      enum.WiresUiKey.Key:
-        type: WiresBoundUserInterface
-  - type: WiresPanel
-  - type: Wires
-    boardName: wires-board-name-airlock-controller
-    layoutId: AirlockController
-  - type: AccessReader
-    access: [["Atmospherics"]]
+      enum.AirlockCyclerUiKey.Key:
+        type: AirlockCyclerBoundUserInterface
   - type: ContainerFill
     containers:
-      board: [ AirlockControllerElectronics ]
+      board: [ AirlockCyclerElectronics ]
   - type: ContainerContainer
     containers:
       board: !type:Container
   - type: Appearance
-  - type: WiresVisuals
   - type: PointLight
     enabled: false
     radius: 3
-    energy: 0.6
-    color: "#E0A14A"
+    energy: 0.8
+    color: "#FEEE4A"
     lightMask: ConeDouble
     castShadows: false
   - type: RotatingLight
-    speed: 40
-  # TODO: MAKE SPRITE GOOD!
+    speed: 30
   - type: Sprite
-    sprite: Structures/Wallmounts/airlock_controller.rsi
+    sprite: Structures/Wallmounts/airlock_cycler.rsi
     layers:
     - state: base
       map: ["enum.AirlockControllerVisualLayers.Base"]
@@ -82,9 +58,6 @@
     - state: light_off
       shader: unshaded
       map: ["enum.AirlockControllerVisualLayers.Light"]
-    - state: panel
-      map: ["enum.WiresVisualLayers.MaintenancePanel"]
-      visible: false
   - type: AirlockControllerVisuals
     stateSprites:
       Idle: state_idle
@@ -97,8 +70,8 @@
       SideB: side_b
       Maintenance: maintenance
   - type: Construction
-    graph: AirlockController
-    node: airlock_controller
+    graph: AirlockCycler
+    node: airlock_cycler
   - type: Damageable
     damageModifierSet: Metallic
   - type: Injurable
@@ -123,9 +96,9 @@
 
 - type: entity
   parent: BaseWallmountMetallic
-  id: AirlockControllerAssembly
-  name: airlock controller assembly
-  description: An airlock controller. It isn't controlling much of anything yet.
+  id: AirlockCyclerAssembly
+  name: airlock cycler assembly
+  description: An airlock cycler. It isn't calling anything yet.
   components:
   - type: Sprite
     sprite: Structures/Wallmounts/air_monitors.rsi
@@ -134,5 +107,5 @@
       map: [ "enum.ConstructionVisuals.Layer" ]
   - type: Appearance
   - type: Construction
-    graph: AirlockController
+    graph: AirlockCycler
     node: assembly

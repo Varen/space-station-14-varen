@@ -57,12 +57,17 @@ public sealed class AirlockControllerConfigBoundUserInterface : BoundUserInterfa
 
         _window = this.CreateWindow<AirlockControllerConfigWindow>();
 
-        _window.VentRolesChanged += (uid, roles) => SendMessage(new AirlockControllerSetVentRolesMessage(uid, roles));
-        _window.DoorSideChanged += (uid, side) => SendMessage(new AirlockControllerSetDoorSideMessage(uid, side));
-        _window.TargetSensorChanged += (side, uid) => SendMessage(new AirlockControllerSetTargetSensorMessage(side, uid));
-        _window.PresetChanged += (side, pressure) => SendMessage(new AirlockControllerSetPresetMessage(side, pressure));
-        _window.MaintenanceChanged += enabled => SendMessage(new AirlockControllerSetMaintenanceMessage(enabled));
+        // Predicted magic
+        _window.VentRolesChanged += (uid, roles) => SendPredictedMessage(new AirlockControllerSetVentRolesMessage(uid, roles));
+        _window.DoorSideChanged += (uid, side) => SendPredictedMessage(new AirlockControllerSetDoorSideMessage(uid, side));
+        _window.CyclerSideChanged += (uid, side) => SendPredictedMessage(new AirlockControllerSetCyclerSideMessage(uid, side));
+        _window.TargetSensorChanged += (side, uid) => SendPredictedMessage(new AirlockControllerSetTargetSensorMessage(side, uid));
+        _window.PresetChanged += (side, pressure) => SendPredictedMessage(new AirlockControllerSetPresetMessage(side, pressure));
+        _window.MaintenanceChanged += enabled => SendPredictedMessage(new AirlockControllerSetMaintenanceMessage(enabled));
+
         _window.ForceSideRequested += side => SendMessage(new AirlockControllerForceSideMessage(side));
+
+        Update();
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)
@@ -70,6 +75,42 @@ public sealed class AirlockControllerConfigBoundUserInterface : BoundUserInterfa
         base.UpdateState(state);
 
         if (state is AirlockControllerConfigUiState cast)
-            _window?.UpdateState(cast);
+            _window?.SetTelemetry(cast);
+    }
+
+    public override void Update()
+    {
+        if (_window == null || !EntMan.TryGetComponent(Owner, out AirlockControllerComponent? controller))
+            return;
+
+        var view = new AirlockConfigView
+        {
+            PresetPressureA = controller.PresetPressureA,
+            PresetPressureB = controller.PresetPressureB,
+            MaintenanceMode = controller.MaintenanceMode,
+        };
+
+        foreach (var (device, roles) in controller.VentRoles)
+        {
+            view.VentRoles[EntMan.GetNetEntity(device)] = roles;
+        }
+
+        foreach (var (device, side) in controller.DoorRoles)
+        {
+            view.DoorRoles[EntMan.GetNetEntity(device)] = side;
+        }
+
+        foreach (var (device, side) in controller.CyclerRoles)
+        {
+            view.CyclerRoles[EntMan.GetNetEntity(device)] = side;
+        }
+
+        if (controller.TargetSensors.TryGetValue(AirlockSide.A, out var sensorA))
+            view.TargetSensorA = EntMan.GetNetEntity(sensorA);
+
+        if (controller.TargetSensors.TryGetValue(AirlockSide.B, out var sensorB))
+            view.TargetSensorB = EntMan.GetNetEntity(sensorB);
+
+        _window.SetConfig(view);
     }
 }

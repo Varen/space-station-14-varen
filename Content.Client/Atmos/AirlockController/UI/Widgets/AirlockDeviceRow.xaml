@@ -9,6 +9,11 @@
         <widgets:AirlockSideSelector Name="DoorSide" HorizontalExpand="True" />
     </BoxContainer>
 
+    <BoxContainer Name="CyclerBox" Orientation="Horizontal" Visible="False">
+        <Label Text="{Loc 'airlock-controller-config-cycler-side'}" Margin="0 0 4 0" />
+        <widgets:AirlockSideSelector Name="CyclerSide" HorizontalExpand="True" />
+    </BoxContainer>
+
     <BoxContainer Name="VentBox" Orientation="Horizontal" Visible="False">
         <CheckBox Name="VentACheck" Text="{Loc 'airlock-controller-config-vent-a'}" Margin="0 0 6 0" />
         <CheckBox Name="SiphonACheck" Text="{Loc 'airlock-controller-config-siphon-a'}" Margin="0 0 6 0" />
