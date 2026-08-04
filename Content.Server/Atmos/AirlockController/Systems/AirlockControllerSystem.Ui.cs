@@ -35,6 +35,7 @@ public sealed partial class AirlockControllerSystem
             subs =>
         {
             subs.Event<AirlockControllerForceSideMessage>(OnForceSide);
+            subs.Event<BoundUIClosedEvent>(OnConfigClosed);
         });
     }
 
@@ -47,7 +48,14 @@ public sealed partial class AirlockControllerSystem
 
     protected override bool CanEdit(Entity<AirlockControllerComponent> ent, EntityUid actor)
     {
-        return CheckConfigAccess(ent, actor);
+        if (!CheckConfigAccess(ent, actor))
+            return false;
+
+        // One entry covers the whole time the window is open
+        if (ent.Comp.LoggedEditors.Add(actor))
+            LogUse(ent, actor);
+
+        return true;
     }
 
     protected override bool IsValidDevice(
@@ -74,7 +82,7 @@ public sealed partial class AirlockControllerSystem
     /// </summary>
     private bool CanCommandDoor(Entity<AirlockControllerComponent> ent, EntityUid door, EntityUid actor)
     {
-        if (IsMapping(ent) || _access.IsAllowed(actor, door))
+        if (IsMapping(ent) || IsAllowedQuiet(actor, door))
             return true;
 
         DenyAccess(ent, actor);
@@ -179,12 +187,17 @@ public sealed partial class AirlockControllerSystem
 
     #region Config window
 
+    private void OnConfigClosed(Entity<AirlockControllerComponent> ent, ref BoundUIClosedEvent args)
+    {
+        ent.Comp.LoggedEditors.Remove(args.Actor);
+    }
+
     private bool CheckConfigAccess(Entity<AirlockControllerComponent> ent, EntityUid user)
     {
         if (IsMapping(ent))
             return true;
 
-        if (!_access.IsAllowed(user, ent))
+        if (!IsAllowedQuiet(user, ent))
         {
             DenyAccess(ent, user);
             return false;
@@ -287,7 +300,7 @@ public sealed partial class AirlockControllerSystem
 
     private void OnForceSide(Entity<AirlockControllerComponent> ent, ref AirlockControllerForceSideMessage args)
     {
-        if (!CheckConfigAccess(ent, args.Actor))
+        if (!CanEdit(ent, args.Actor))
             return;
 
         if (!IsValidSide(args.Side))

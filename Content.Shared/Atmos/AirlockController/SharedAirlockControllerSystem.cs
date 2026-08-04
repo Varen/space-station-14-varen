@@ -1,3 +1,6 @@
+using Content.Shared.Access.Components;
+using Content.Shared.Access.Systems;
+
 namespace Content.Shared.Atmos.AirlockController;
 
 /// <summary>
@@ -5,6 +8,7 @@ namespace Content.Shared.Atmos.AirlockController;
 /// </summary>
 public abstract class SharedAirlockControllerSystem : EntitySystem
 {
+    [Dependency] protected AccessReaderSystem Access = default!;
     [Dependency] protected SharedUserInterfaceSystem UserInterfaceSystem = default!;
 
     private const AirlockVentRole AllVentRoles =
@@ -86,6 +90,21 @@ public abstract class SharedAirlockControllerSystem : EntitySystem
     protected static bool IsValidSide(AirlockSide side)
     {
         return side is AirlockSide.A or AirlockSide.B;
+    }
+
+    /// <summary>
+    ///     Access check that writes no log entry
+    /// </summary>
+    public bool IsAllowedQuiet(EntityUid user, EntityUid target)
+    {
+        if (!TryComp<AccessReaderComponent>(target, out var reader))
+            return true;
+
+        var sources = Access.FindPotentialAccessItems(user);
+        var tags = Access.FindAccessTags(user, sources);
+        Access.FindStationRecordKeys(user, out var keys, sources);
+
+        return Access.IsAllowed(tags, keys, target, reader);
     }
 
     private void OnSetVentRoles(Entity<AirlockControllerComponent> ent, ref AirlockControllerSetVentRolesMessage args)

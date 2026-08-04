@@ -94,6 +94,11 @@ public sealed partial class AirlockControllerComponent : Component
     public readonly Dictionary<string, AirlockDoorReport> DoorReports = new();
 
     /// <summary>
+    ///     Who we already logged this session
+    /// </summary>
+    public readonly HashSet<EntityUid> LoggedEditors = new();
+
+    /// <summary>
     ///     If set, these will be used to match target pressure on them for each side. Otherwise, we use presets.
     /// </summary>
     [DataField, AutoNetworkedField]

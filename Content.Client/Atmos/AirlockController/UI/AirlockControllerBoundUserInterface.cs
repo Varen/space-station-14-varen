@@ -1,4 +1,3 @@
-using Content.Shared.Access.Systems;
 using Content.Shared.Atmos.AirlockController;
 using Robust.Client.Player;
 using Robust.Client.UserInterface;
@@ -9,13 +8,13 @@ public sealed partial class AirlockControllerBoundUserInterface : BoundUserInter
 {
     [Dependency] private IPlayerManager _player = default!;
 
-    private readonly AccessReaderSystem _access;
+    private readonly AirlockControllerSystem _controller;
 
     private AirlockControllerWindow? _window;
 
     public AirlockControllerBoundUserInterface(EntityUid owner, Enum uiKey) : base(owner, uiKey)
     {
-        _access = EntMan.System<AccessReaderSystem>();
+        _controller = EntMan.System<AirlockControllerSystem>();
     }
 
     protected override void Open()
@@ -31,7 +30,7 @@ public sealed partial class AirlockControllerBoundUserInterface : BoundUserInter
         // Access locked config (Atmos)
         _window.ConfigRequested += () => SendMessage(new AirlockControllerOpenConfigMessage());
         if (_player.LocalEntity is { } player)
-            _window.SetConfigAllowed(_access.IsAllowed(player, Owner));
+            _window.SetConfigAllowed(_controller.IsAllowedQuiet(player, Owner));
     }
 
     protected override void UpdateState(BoundUserInterfaceState state)

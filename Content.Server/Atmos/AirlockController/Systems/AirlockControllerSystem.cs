@@ -3,6 +3,7 @@ using Content.Server.Atmos.Monitor.Systems;
 using Content.Server.DeviceLinking.Systems;
 using Content.Server.DeviceNetwork.Systems;
 using Content.Server.Power.EntitySystems;
+using Content.Shared.Access.Components;
 using Content.Shared.Access.Systems;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.AirlockController;
@@ -17,8 +18,10 @@ using Content.Shared.DeviceNetwork.Systems;
 using Content.Shared.Doors;
 using Content.Shared.Examine;
 using Content.Shared.Popups;
+using Content.Shared.Tag;
 using Robust.Shared.Audio;
 using Robust.Shared.Audio.Systems;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 
 namespace Content.Server.Atmos.AirlockController.Systems;
@@ -37,6 +40,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     [Dependency] private DeviceListSystem _deviceList = default!;
     [Dependency] private PowerReceiverSystem _power = default!;
     [Dependency] private AccessReaderSystem _access = default!;
+    [Dependency] private TagSystem _tag = default!;
     [Dependency] private SharedPopupSystem _popup = default!;
     [Dependency] private SharedAudioSystem _audio = default!;
     [Dependency] private SharedAppearanceSystem _appearance = default!;
@@ -400,9 +404,26 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         // Sealing shuts and bolts everything already
         comp.RestoreDoors = false;
 
+        if (user != null)
+            LogUse(ent, user.Value);
+
         SetState(ent, AirlockCycleState.Sealing);
         return true;
     }
+
+    /// <summary>
+    ///     Adds the user to our own access log
+    /// </summary>
+    private void LogUse(Entity<AirlockControllerComponent> ent, EntityUid user)
+    {
+        if (_tag.HasTag(user, PreventAccessLoggingTag))
+            return;
+
+        if (TryComp<AccessReaderComponent>(ent, out var reader))
+            _access.LogAccess((ent, reader), user);
+    }
+
+    private static readonly ProtoId<TagPrototype> PreventAccessLoggingTag = "PreventAccessLogging";
 
     private void DenyAccess(EntityUid uid, EntityUid user)
     {
@@ -421,7 +442,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             if (doorSide != side || !devices.TryGetValue(address, out var door))
                 continue;
 
-            if (!_access.IsAllowed(user, door))
+            if (!IsAllowedQuiet(user, door))
                 return false;
         }
 
