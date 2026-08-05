@@ -103,6 +103,17 @@ public enum AirlockStallReason : byte
 }
 
 /// <summary>
+///     What a controller or one of its panels is currently showing the player.
+/// </summary>
+[Serializable, NetSerializable]
+public readonly record struct AirlockCycleStatus(
+    AirlockCycleState State,
+    AirlockSide Side,
+    AirlockStallReason? Stall,
+    bool Maintenance,
+    bool Warning);
+
+/// <summary>
 ///     Shared by the status window and the examine text.
 /// </summary>
 public static class AirlockControllerLocale

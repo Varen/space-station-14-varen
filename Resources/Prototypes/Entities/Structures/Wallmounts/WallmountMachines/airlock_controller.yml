@@ -30,6 +30,7 @@
       AirlockCycling: false
   - type: AtmosDevice
   - type: AirlockController
+  - type: AirlockCycleAlarm
   - type: Clickable
   - type: InteractionOutline
   - type: UserInterface

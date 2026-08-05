@@ -3,7 +3,6 @@ using Content.Server.Power.EntitySystems;
 using Content.Shared.Atmos.AirlockController;
 using Content.Shared.Examine;
 using Content.Shared.Interaction;
-using Robust.Shared.Audio.Systems;
 using Robust.Shared.Timing;
 
 namespace Content.Server.Atmos.AirlockController.Systems;
@@ -14,11 +13,13 @@ namespace Content.Server.Atmos.AirlockController.Systems;
 public sealed class AirlockCyclerSystem : EntitySystem
 {
     [Dependency] private AirlockControllerSystem _controller = default!;
-    [Dependency] private SharedAppearanceSystem _appearance = default!;
-    [Dependency] private SharedAudioSystem _audio = default!;
-    [Dependency] private SharedPointLightSystem _pointLight = default!;
+    [Dependency] private AirlockCycleStatusSystem _status = default!;
     [Dependency] private SharedUserInterfaceSystem _ui = default!;
     [Dependency] private IGameTiming _timing = default!;
+
+    private static readonly TimeSpan UpdateInterval = TimeSpan.FromSeconds(1);
+
+    private TimeSpan _nextUpdate;
 
     public override void Initialize()
     {
@@ -36,66 +37,38 @@ public sealed class AirlockCyclerSystem : EntitySystem
 
     public override void Update(float frameTime)
     {
-        var now = _timing.CurTime;
+        if (_timing.CurTime < _nextUpdate)
+            return;
+
+        _nextUpdate = _timing.CurTime + UpdateInterval;
+
         var query = EntityQueryEnumerator<AirlockCyclerComponent>();
 
         while (query.MoveNext(out var uid, out var comp))
         {
             // A controller that blew up stops claiming its panels
             if (comp.Controller is { } controller && TerminatingOrDeleted(controller))
-                Unbind((uid, comp));
+                comp.Controller = null;
 
-            UpdateCycleSound((uid, comp), now);
+            // Bound panels are written by their controller, the rest are our own problem
+            if (comp.Controller == null)
+            {
+                comp.ChamberPressure = null;
+                comp.Status = Unbound(comp.Side);
+                _status.Apply(uid, comp.Status);
+            }
+
+            if (_ui.IsUiOpen(uid, AirlockCyclerUiKey.Key))
+                UpdateUi((uid, comp));
         }
     }
 
     /// <summary>
-    ///     Where the controller pushes its state, every tick it updates itself
+    ///     Shows as uninstalled controller
     /// </summary>
-    public void SetStatus(
-        Entity<AirlockCyclerComponent> ent,
-        Entity<AirlockControllerComponent> controller,
-        AirlockSide side,
-        float? chamberPressure,
-        bool warning)
+    private static AirlockCycleStatus Unbound(AirlockSide side)
     {
-        var comp = ent.Comp;
-        var source = controller.Comp;
-
-        comp.Controller = controller.Owner;
-        comp.Side = side;
-        comp.State = source.State;
-        comp.CurrentSide = source.CurrentSide;
-        comp.StallReason = source.StallReason;
-        comp.MaintenanceMode = source.MaintenanceMode;
-        comp.ChamberPressure = chamberPressure;
-        comp.Warning = warning;
-
-        UpdateAppearance(ent);
-        UpdateUi(ent);
-    }
-
-    /// <summary>
-    ///     Forget the controller
-    /// </summary>
-    public void Unbind(Entity<AirlockCyclerComponent> ent)
-    {
-        var comp = ent.Comp;
-
-        if (comp.Controller == null)
-            return;
-
-        comp.Controller = null;
-        comp.StallReason = null;
-        comp.State = AirlockCycleState.Idle;
-        comp.ChamberPressure = null;
-        comp.Warning = false;
-
-        // Reads like an uninstalled controller
-        comp.MaintenanceMode = true;
-
-        UpdateAppearance(ent);
-        UpdateUi(ent);
+        return new AirlockCycleStatus(AirlockCycleState.Idle, side, null, true, false);
     }
 
     private void OnActivate(Entity<AirlockCyclerComponent> ent, ref ActivateInWorldEvent args)
@@ -121,84 +94,25 @@ public sealed class AirlockCyclerSystem : EntitySystem
         if (!args.IsInDetailsRange)
             return;
 
-        var comp = ent.Comp;
-
-        if (comp.Controller == null)
+        if (ent.Comp.Controller == null)
         {
             args.PushMarkup(Loc.GetString("airlock-cycler-examine-unbound"));
             return;
         }
 
-        if (comp.MaintenanceMode)
-        {
-            args.PushMarkup(Loc.GetString("airlock-controller-examine-maintenance"));
-            return;
-        }
-
-        args.PushMarkup(Loc.GetString("airlock-controller-examine-state",
-            ("state", Loc.GetString(AirlockControllerLocale.StateKey(comp.State)))));
-
-        args.PushMarkup(Loc.GetString("airlock-controller-examine-side",
-            ("side", Loc.GetString(AirlockControllerLocale.SideKey(comp.CurrentSide)))));
-
-        if (comp.StallReason is { } reason)
-        {
-            args.PushMarkup(Loc.GetString("airlock-controller-examine-error",
-                ("reason", Loc.GetString(AirlockControllerLocale.StallKey(reason)))));
-        }
+        _status.Examine(ent.Comp.Status, args);
     }
 
     private void UpdateUi(Entity<AirlockCyclerComponent> ent)
     {
         var comp = ent.Comp;
 
-        if (!_ui.IsUiOpen(ent.Owner, AirlockCyclerUiKey.Key))
-            return;
-
         _ui.SetUiState(ent.Owner, AirlockCyclerUiKey.Key, new AirlockCyclerUiState
         {
             Bound = comp.Controller != null,
             Side = comp.Side,
-            State = comp.State,
-            CurrentSide = comp.CurrentSide,
-            StallReason = comp.StallReason,
-            MaintenanceMode = comp.MaintenanceMode,
+            Status = comp.Status,
             ChamberPressure = comp.ChamberPressure,
         });
-    }
-
-    private void UpdateAppearance(Entity<AirlockCyclerComponent> ent)
-    {
-        var comp = ent.Comp;
-
-        var display = comp.MaintenanceMode
-            ? AirlockControllerDisplay.Maintenance
-            : comp.CurrentSide == AirlockSide.A
-                ? AirlockControllerDisplay.SideA
-                : AirlockControllerDisplay.SideB;
-
-        _appearance.SetData(ent, AirlockControllerVisuals.State, comp.State);
-        _appearance.SetData(ent, AirlockControllerVisuals.Display, display);
-        _appearance.SetData(ent, AirlockControllerVisuals.Error, comp.StallReason != null);
-        _appearance.SetData(ent, AirlockControllerVisuals.Cycling, comp.Warning);
-
-        _pointLight.SetEnabled(ent, comp.Warning);
-    }
-
-    private void UpdateCycleSound(Entity<AirlockCyclerComponent> ent, TimeSpan now)
-    {
-        var comp = ent.Comp;
-
-        if (!comp.Warning)
-        {
-            comp.NextCycleSound = TimeSpan.Zero;
-            return;
-        }
-
-        if (now < comp.NextCycleSound)
-            return;
-
-        comp.NextCycleSound = now + comp.CycleSoundInterval;
-        _audio.PlayPvs(comp.CycleSound, ent, comp.CycleSound.Params.AddVolume(comp.CycleVolume));
     }
 }

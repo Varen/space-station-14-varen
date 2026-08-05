@@ -1,10 +1,9 @@
 using Content.Shared.Atmos.AirlockController;
-using Robust.Shared.Audio;
 
 namespace Content.Server.Atmos.AirlockController.Components;
 
 /// <summary>
-///     Wallmount outside the airlock that calls the chamber over. Everything written
+///     Wallmount outside the airlock that calls the chamber over. Everything here is written
 ///     by the controller that has it assigned.
 /// </summary>
 [RegisterComponent]
@@ -22,44 +21,9 @@ public sealed partial class AirlockCyclerComponent : Component
     [ViewVariables]
     public AirlockSide Side;
 
-    #region Mirrored state
-
     [ViewVariables]
-    public AirlockCycleState State = AirlockCycleState.Idle;
-
-    [ViewVariables]
-    public AirlockSide CurrentSide;
-
-    [ViewVariables]
-    public AirlockStallReason? StallReason;
-
-    [ViewVariables]
-    public bool MaintenanceMode = true;
+    public AirlockCycleStatus Status = new(AirlockCycleState.Idle, AirlockSide.A, null, true, false);
 
     [ViewVariables]
     public float? ChamberPressure;
-
-    /// <summary>
-    ///     Light and alarm, the controller decides when
-    /// </summary>
-    [ViewVariables]
-    public bool Warning;
-
-    #endregion
-
-    #region Cycle warning
-
-    [DataField]
-    public SoundSpecifier CycleSound = new SoundPathSpecifier("/Audio/Machines/alarm.ogg");
-
-    [DataField]
-    public float CycleVolume = -10f;
-
-    [DataField]
-    public TimeSpan CycleSoundInterval = TimeSpan.FromSeconds(6);
-
-    [ViewVariables]
-    public TimeSpan NextCycleSound;
-
-    #endregion
 }

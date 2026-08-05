@@ -19,12 +19,12 @@ public sealed class AirlockCyclerUiState : BoundUserInterfaceState
     /// </summary>
     public bool Bound;
 
+    /// <summary>
+    ///     The side we call the chamber to
+    /// </summary>
     public AirlockSide Side;
 
-    public AirlockCycleState State;
-    public AirlockSide CurrentSide;
-    public AirlockStallReason? StallReason;
-    public bool MaintenanceMode;
+    public AirlockCycleStatus Status;
 
     public float? ChamberPressure;
 }

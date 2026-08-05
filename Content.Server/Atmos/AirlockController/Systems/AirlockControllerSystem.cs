@@ -28,12 +28,12 @@ namespace Content.Server.Atmos.AirlockController.Systems;
 
 /// <summary>
 ///     Airlock cycle. Five states + cancel and stall flags
-///     Vents, sensors and doors are all device-network ents
-///     Signals are extras for player shenanigans
+///     Vents, sensors, doors and cycler panels are all device-network ents
+///     Signal outputs are extras for player shenanigans
 /// </summary>
 public sealed partial class AirlockControllerSystem : SharedAirlockControllerSystem
 {
-    [Dependency] private AirlockCyclerSystem _cycler = default!;
+    [Dependency] private AirlockCycleStatusSystem _status = default!;
     [Dependency] private AtmosDeviceNetworkSystem _atmosDevNet = default!;
     [Dependency] private DeviceNetworkSystem _deviceNetwork = default!;
     [Dependency] private DeviceLinkSystem _signal = default!;
@@ -43,8 +43,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     [Dependency] private TagSystem _tag = default!;
     [Dependency] private SharedPopupSystem _popup = default!;
     [Dependency] private SharedAudioSystem _audio = default!;
-    [Dependency] private SharedAppearanceSystem _appearance = default!;
-    [Dependency] private SharedPointLightSystem _pointLight = default!;
     [Dependency] private IGameTiming _timing = default!;
 
     public override void Initialize()
@@ -71,25 +69,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (!args.IsInDetailsRange)
             return;
 
-        var comp = ent.Comp;
-
-        if (comp.MaintenanceMode)
-        {
-            args.PushMarkup(Loc.GetString("airlock-controller-examine-maintenance"));
-            return;
-        }
-
-        args.PushMarkup(Loc.GetString("airlock-controller-examine-state",
-            ("state", Loc.GetString(AirlockControllerLocale.StateKey(comp.State)))));
-
-        args.PushMarkup(Loc.GetString("airlock-controller-examine-side",
-            ("side", Loc.GetString(AirlockControllerLocale.SideKey(comp.CurrentSide)))));
-
-        if (comp.StallReason is { } reason)
-        {
-            args.PushMarkup(Loc.GetString("airlock-controller-examine-error",
-                ("reason", Loc.GetString(AirlockControllerLocale.StallKey(reason)))));
-        }
+        _status.Examine(GetStatus(ent), args);
     }
 
     #region Device network
@@ -202,13 +182,17 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         Prune(comp.SensorData, devices);
         Prune(comp.DoorReports, devices);
 
-        PruneDeleted(comp.VentRoles);
-        PruneDeletedValues(comp.TargetSensors);
-        PruneDeleted(comp.DoorRoles);
-        PruneDeleted(comp.CyclerRoles);
+        // Config is networked
+        var dropped = PruneDeleted(comp.VentRoles)
+                      | PruneDeletedValues(comp.TargetSensors)
+                      | PruneDeleted(comp.DoorRoles)
+                      | PruneDeleted(comp.CyclerRoles);
+
+        if (dropped)
+            Dirty(ent);
     }
 
-    private void PruneDeletedValues<TKey>(Dictionary<TKey, EntityUid> config) where TKey : notnull
+    private bool PruneDeletedValues<TKey>(Dictionary<TKey, EntityUid> config) where TKey : notnull
     {
         List<TKey>? gone = null;
 
@@ -222,15 +206,17 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         }
 
         if (gone == null)
-            return;
+            return false;
 
         foreach (var key in gone)
         {
             config.Remove(key);
         }
+
+        return true;
     }
 
-    private void PruneDeleted<T>(Dictionary<EntityUid, T> config)
+    private bool PruneDeleted<T>(Dictionary<EntityUid, T> config)
     {
         List<EntityUid>? gone = null;
 
@@ -244,12 +230,14 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         }
 
         if (gone == null)
-            return;
+            return false;
 
         foreach (var device in gone)
         {
             config.Remove(device);
         }
+
+        return true;
     }
 
     private static void Prune<T>(Dictionary<string, T> cache, Dictionary<string, EntityUid> devices)
@@ -293,14 +281,14 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     /// <summary>
     ///     Assigned doors that are still bound to us
     /// </summary>
-    private List<(string Address, AirlockSide Side)> BoundDoors(Entity<AirlockControllerComponent> ent)
+    private List<(EntityUid Door, string Address, AirlockSide Side)> BoundDoors(Entity<AirlockControllerComponent> ent)
     {
-        var result = new List<(string, AirlockSide)>();
+        var result = new List<(EntityUid, string, AirlockSide)>();
 
         foreach (var (address, device) in _deviceList.GetDeviceList(ent.Owner))
         {
             if (ent.Comp.DoorRoles.TryGetValue(device, out var side))
-                result.Add((address, side));
+                result.Add((device, address, side));
         }
 
         return result;
@@ -314,7 +302,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var hasA = false;
         var hasB = false;
 
-        foreach (var (_, side) in BoundDoors(ent))
+        foreach (var (_, _, side) in BoundDoors(ent))
         {
             if (side == AirlockSide.A)
                 hasA = true;
@@ -332,17 +320,13 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         return true;
     }
 
-    private void SendDoorCommand(Entity<AirlockControllerComponent> ent, string address, string command)
+    private void SendDoorCommand(Entity<AirlockControllerComponent> ent, EntityUid door, string address, string command)
     {
         if (!TryComp<DeviceNetworkComponent>(ent, out var net) || net.ReceiveFrequency == null)
             return;
 
-        if (!_deviceList.GetDeviceList(ent).TryGetValue(address, out var door)
-            || !TryComp<DeviceNetworkComponent>(door, out var doorNet)
-            || doorNet.ReceiveFrequency == null)
-        {
+        if (!TryComp<DeviceNetworkComponent>(door, out var doorNet) || doorNet.ReceiveFrequency == null)
             return;
-        }
 
         var payload = new NetworkPayload
         {
@@ -356,7 +340,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
     #endregion
 
-    #region Signals
+    #region Cycle requests
 
     /// <summary>
     ///     A panel is just the cycle button of the side it was assigned to
@@ -435,11 +419,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
     private bool CanUseSide(Entity<AirlockControllerComponent> ent, AirlockSide side, EntityUid user)
     {
-        var devices = _deviceList.GetDeviceList(ent);
-
-        foreach (var (address, doorSide) in BoundDoors(ent))
+        foreach (var (door, _, doorSide) in BoundDoors(ent))
         {
-            if (doorSide != side || !devices.TryGetValue(address, out var door))
+            if (doorSide != side)
                 continue;
 
             if (!IsAllowedQuiet(user, door))
@@ -501,8 +483,8 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             comp.NextUpdate = now + comp.UpdateInterval;
 
             PruneCaches((uid, comp));
-            UpdateAppearance((uid, comp));
-            UpdateCycleSound((uid, comp), now);
+            _status.Apply(uid, GetStatus((uid, comp)));
+            UpdateCyclers((uid, comp));
 
             var cycling = !comp.MaintenanceMode && comp.State != AirlockCycleState.Idle;
             var uiOpen = UserInterfaceSystem.IsUiOpen(uid, AirlockControllerUiKey.Key)
@@ -542,9 +524,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     /// </summary>
     private void PollDoors(Entity<AirlockControllerComponent> ent)
     {
-        foreach (var (address, _) in BoundDoors(ent))
+        foreach (var (door, address, _) in BoundDoors(ent))
         {
-            SendDoorCommand(ent, address, DoorNetworkCommands.Sync);
+            SendDoorCommand(ent, door, address, DoorNetworkCommands.Sync);
         }
     }
 
@@ -562,7 +544,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var nearDoors = 0;
         var nearReleased = 0;
 
-        foreach (var (address, side) in BoundDoors(ent))
+        foreach (var (_, address, side) in BoundDoors(ent))
         {
             var known = comp.DoorReports.TryGetValue(address, out var report);
 
@@ -660,7 +642,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var progress = 0;
         var allSealed = true;
 
-        foreach (var (address, _) in doors)
+        foreach (var (door, address, _) in doors)
         {
             // No report yet, PollDoors will ask again
             if (!comp.DoorReports.TryGetValue(address, out var report))
@@ -671,7 +653,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
             if (report.Open)
             {
-                SendDoorCommand(ent, address, report.Bolted
+                SendDoorCommand(ent, door, address, report.Bolted
                     ? DoorNetworkCommands.Unbolt
                     : DoorNetworkCommands.Close);
 
@@ -688,7 +670,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
                 continue;
             }
 
-            SendDoorCommand(ent, address, DoorNetworkCommands.Bolt);
+            SendDoorCommand(ent, door, address, DoorNetworkCommands.Bolt);
             allSealed = false;
         }
 
@@ -762,7 +744,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var progress = 0;
         var total = 0;
 
-        foreach (var (address, side) in BoundDoors(ent))
+        foreach (var (door, address, side) in BoundDoors(ent))
         {
             if (side != comp.TargetSide)
                 continue;
@@ -776,7 +758,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             if (report.Boltable && report.Bolted)
             {
                 if (comp.BoltingEnabled)
-                    SendDoorCommand(ent, address, DoorNetworkCommands.Unbolt);
+                    SendDoorCommand(ent, door, address, DoorNetworkCommands.Unbolt);
 
                 continue;
             }
@@ -785,7 +767,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
             if (!report.Open)
             {
-                SendDoorCommand(ent, address, DoorNetworkCommands.Open);
+                SendDoorCommand(ent, door, address, DoorNetworkCommands.Open);
                 continue;
             }
 
@@ -883,7 +865,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (doors.Count == 0)
             return false;
 
-        foreach (var (address, _) in doors)
+        foreach (var (_, address, _) in doors)
         {
             if (!comp.DoorReports.TryGetValue(address, out var report) || report.Open)
                 return false;
@@ -896,21 +878,20 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         return true;
     }
 
-
     private void CommandAllDoors(Entity<AirlockControllerComponent> ent, string command)
     {
-        foreach (var (address, _) in BoundDoors(ent))
+        foreach (var (door, address, _) in BoundDoors(ent))
         {
-            SendDoorCommand(ent, address, command);
+            SendDoorCommand(ent, door, address, command);
         }
     }
 
     private void CommandSide(Entity<AirlockControllerComponent> ent, AirlockSide side, string command)
     {
-        foreach (var (address, doorSide) in BoundDoors(ent))
+        foreach (var (door, address, doorSide) in BoundDoors(ent))
         {
             if (doorSide == side)
-                SendDoorCommand(ent, address, command);
+                SendDoorCommand(ent, door, address, command);
         }
     }
 
@@ -1102,28 +1083,20 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         _signal.SendSignal(ent, comp.StateAPort, idle && comp.CurrentSide == AirlockSide.A);
         _signal.SendSignal(ent, comp.StateBPort, idle && comp.CurrentSide == AirlockSide.B);
 
-        UpdateAppearance(ent);
+        _status.Apply(ent, GetStatus(ent));
+        UpdateCyclers(ent);
     }
 
-    private void UpdateAppearance(Entity<AirlockControllerComponent> ent)
+    private static AirlockCycleStatus GetStatus(Entity<AirlockControllerComponent> ent)
     {
         var comp = ent.Comp;
 
-        var display = comp.MaintenanceMode
-            ? AirlockControllerDisplay.Maintenance
-            : comp.CurrentSide == AirlockSide.A
-                ? AirlockControllerDisplay.SideA
-                : AirlockControllerDisplay.SideB;
-
-        _appearance.SetData(ent, AirlockControllerVisuals.State, comp.State);
-        _appearance.SetData(ent, AirlockControllerVisuals.Display, display);
-        _appearance.SetData(ent, AirlockControllerVisuals.Error, comp.StallReason != null);
-        _appearance.SetData(ent, AirlockControllerVisuals.Cycling, IsWarning(ent));
-
-        _pointLight.SetEnabled(ent, IsWarning(ent));
-
-        // Panels show whatever we show
-        UpdateCyclers(ent);
+        return new AirlockCycleStatus(
+            comp.State,
+            comp.CurrentSide,
+            comp.StallReason,
+            comp.MaintenanceMode,
+            IsWarning(ent));
     }
 
     /// <summary>
@@ -1137,15 +1110,22 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             return;
 
         var pressure = TryGetChamberPressure(ent, out var reading) ? reading : (float?)null;
-        var warning = IsWarning(ent);
+        var status = GetStatus(ent);
 
         foreach (var device in _deviceList.GetDeviceList(ent.Owner).Values)
         {
-            if (comp.CyclerRoles.TryGetValue(device, out var side)
-                && TryComp<AirlockCyclerComponent>(device, out var panel))
+            if (!comp.CyclerRoles.TryGetValue(device, out var side)
+                || !TryComp<AirlockCyclerComponent>(device, out var panel))
             {
-                _cycler.SetStatus((device, panel), ent, side, pressure, warning);
+                continue;
             }
+
+            panel.Controller = ent.Owner;
+            panel.Side = side;
+            panel.Status = status;
+            panel.ChamberPressure = pressure;
+
+            _status.Apply(device, status);
         }
     }
 
@@ -1159,23 +1139,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         return comp.EmergencyLightsEnabled
                && !comp.MaintenanceMode
                && comp.State != AirlockCycleState.Idle;
-    }
-
-    private void UpdateCycleSound(Entity<AirlockControllerComponent> ent, TimeSpan now)
-    {
-        var comp = ent.Comp;
-
-        if (!IsWarning(ent))
-        {
-            comp.NextCycleSound = TimeSpan.Zero;
-            return;
-        }
-
-        if (now < comp.NextCycleSound)
-            return;
-
-        comp.NextCycleSound = now + comp.CycleSoundInterval;
-        _audio.PlayPvs(comp.CycleSound, ent, comp.CycleSound.Params.AddVolume(comp.CycleVolume));
     }
 
     #endregion

@@ -25,26 +25,27 @@ public sealed partial class AirlockCyclerWindow : FancyWindow
 
     public void UpdateState(AirlockCyclerUiState state)
     {
-        var idle = state.State == AirlockCycleState.Idle;
+        var status = state.Status;
+        var idle = status.State == AirlockCycleState.Idle;
 
         CStateLabel.SetMarkup(Loc.GetString(state.Bound
-            ? AirlockControllerLocale.StateKey(state.State)
+            ? AirlockControllerLocale.StateKey(status.State)
             : "airlock-cycler-ui-unbound"));
 
-        CSideLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.SideKey(state.CurrentSide)));
+        CSideLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.SideKey(status.Side)));
         CPressureLabel.SetMarkup(state.ChamberPressure is { } pressure
             ? Loc.GetString("airlock-controller-ui-pressure-value", ("pressure", $"{pressure:0.#}"))
             : Loc.GetString("airlock-controller-ui-pressure-unknown"));
 
-        CStallStripe.Visible = state.StallReason != null;
-        if (state.StallReason is { } reason)
+        CStallStripe.Visible = status.Stall != null;
+        if (status.Stall is { } reason)
             CStallLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.StallKey(reason)));
 
         // Nothing to call for if the chamber is already here
         CCycleButton.Disabled = !state.Bound
                                 || !idle
-                                || state.MaintenanceMode
-                                || state.CurrentSide == state.Side;
+                                || status.Maintenance
+                                || status.Side == state.Side;
 
         CCycleButton.Text = Loc.GetString(state.Side == AirlockSide.A
             ? "airlock-controller-ui-cycle-a"

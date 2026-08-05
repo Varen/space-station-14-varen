@@ -1,7 +1,6 @@
 using Content.Shared.Atmos.Monitor;
 using Content.Shared.Atmos.Piping.Unary.Components;
 using Content.Shared.DeviceLinking;
-using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
 using Robust.Shared.Serialization.TypeSerializers.Implementations.Custom.Prototype;
 
@@ -9,8 +8,8 @@ namespace Content.Shared.Atmos.AirlockController;
 
 /// <summary>
 ///     A controller that cycles an airlock's atmosphere
-///     Uses vents, sensors and doors, with the device network.
-///     Has signals for other player use
+///     Uses vents, sensors, doors and cycler panels, with the device network.
+///     Has signal outputs for other player use
 /// </summary>
 /// <remarks>
 ///     Config is shared / predicted, the cycle is server-side
@@ -191,24 +190,6 @@ public sealed partial class AirlockControllerComponent : Component
     [DataField]
     public bool EmergencyLightsEnabled = true;
 
-    #region Cycle warning
-
-    [DataField]
-    public SoundSpecifier CycleSound = new SoundPathSpecifier("/Audio/Machines/alarm.ogg");
-
-    [DataField]
-    public float CycleVolume = -10f;
-
-    /// <summary>
-    ///     Continues the alarm until error cleared
-    /// </summary>
-    [DataField]
-    public TimeSpan CycleSoundInterval = TimeSpan.FromSeconds(6);
-
-    [ViewVariables]
-    public TimeSpan NextCycleSound;
-
-    #endregion
 }
 
 /// <summary>
@@ -216,19 +197,12 @@ public sealed partial class AirlockControllerComponent : Component
 /// </summary>
 public struct AirlockDoorReport
 {
-    /// <summary>
-    ///     If we don't know, assume open
-    /// </summary>
-    public bool Open = true;
+    public bool Open;
 
-    public bool Bolted = false;
+    public bool Bolted;
 
     /// <summary>
     ///     False for doors with no bolts, like shutters
     /// </summary>
-    public bool Boltable = false;
-
-    public AirlockDoorReport()
-    {
-    }
+    public bool Boltable;
 }

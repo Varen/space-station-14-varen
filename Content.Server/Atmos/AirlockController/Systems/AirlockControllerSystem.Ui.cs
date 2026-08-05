@@ -92,7 +92,7 @@ public sealed partial class AirlockControllerSystem
     protected override void OnDoorAssigned(Entity<AirlockControllerComponent> ent, EntityUid door)
     {
         if (TryComp<DeviceNetworkComponent>(door, out var net) && !string.IsNullOrEmpty(net.Address))
-            SendDoorCommand(ent, net.Address, DoorNetworkCommands.Sync);
+            SendDoorCommand(ent, door, net.Address, DoorNetworkCommands.Sync);
     }
 
     protected override void OnDoorUnassigned(Entity<AirlockControllerComponent> ent, EntityUid door)
@@ -103,8 +103,9 @@ public sealed partial class AirlockControllerSystem
 
     protected override void OnCyclerUnassigned(Entity<AirlockControllerComponent> ent, EntityUid cycler)
     {
+        // The panel gets display from here
         if (TryComp<AirlockCyclerComponent>(cycler, out var panel))
-            _cycler.Unbind((cycler, panel));
+            panel.Controller = null;
     }
 
     protected override void OnMaintenanceChanged(Entity<AirlockControllerComponent> ent)
