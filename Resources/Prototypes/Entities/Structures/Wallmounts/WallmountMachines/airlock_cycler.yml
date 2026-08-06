@@ -13,6 +13,7 @@
     receiveFrequencyId: AtmosMonitor
     transmitFrequencyId: AtmosMonitor
     prefix: device-address-prefix-airlock-cycler
+    examinableAddress: true
   - type: WiredNetworkConnection
   - type: WirelessNetworkConnection
     range: 200

@@ -9,7 +9,9 @@
             <Label Text="{Loc 'airlock-controller-ui-address-label'}" Margin="0 0 4 0" />
             <RichTextLabel Name="CAddressLabel" HorizontalExpand="True" />
             <Label Text="{Loc 'airlock-controller-ui-doors-label'}" Margin="0 0 4 0" />
-            <RichTextLabel Name="CDoorsLabel" />
+            <RichTextLabel Name="CDoorsLabel" Margin="0 0 8 0" />
+            <Label Text="{Loc 'airlock-controller-ui-chamber-sensors-label'}" Margin="0 0 4 0" />
+            <RichTextLabel Name="CChamberSensorsLabel" />
         </BoxContainer>
         <!-- Target sides -->
         <BoxContainer Orientation="Horizontal" Margin="0 0 0 4">

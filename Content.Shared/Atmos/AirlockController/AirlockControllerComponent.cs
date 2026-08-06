@@ -130,22 +130,49 @@ public sealed partial class AirlockControllerComponent : Component
     public float EvacuatedPressure = Atmospherics.Epsilon;
 
     /// <summary>
-    ///     How long to wait after filling just to let atmos settle
+    ///     Reading is settled when it moves less than this between updates
     /// </summary>
     [DataField]
-    public int RequiredStableTicks = 3;
+    public float SettleTolerance = Atmospherics.Epsilon;
+
+    /// <summary>
+    ///     Give up waiting for it to settle and move on
+    /// </summary>
+    [DataField]
+    public int MaxSettleTicks = 3;
 
     [ViewVariables]
-    public int StableTicks;
+    public int SettleTicks;
+
+    [ViewVariables]
+    public float LastChamberReading = float.NaN;
 
     [DataField]
     public TimeSpan StallTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>
+    ///     Atmos update pace. Doors run off their replies instead.
+    /// </summary>
     [DataField]
     public TimeSpan UpdateInterval = TimeSpan.FromSeconds(1);
 
     [ViewVariables]
-    public TimeSpan NextUpdate;
+    public TimeSpan NextSync;
+
+    /// <summary>
+    ///     Set when a door tells us something
+    /// </summary>
+    [ViewVariables]
+    public bool ReportsChanged;
+
+    /// <summary>
+    ///     Poll for door for status while animation progresses
+    /// </summary>
+    [DataField]
+    public TimeSpan DoorPollInterval = TimeSpan.FromSeconds(0.1);
+
+    [ViewVariables]
+    public TimeSpan NextPoll;
 
     /// <summary>
     ///     Used for stalling detection

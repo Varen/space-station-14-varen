@@ -7,6 +7,7 @@ airlock-controller-ui-state-label = Status:
 airlock-controller-ui-side-label = Chamber at:
 airlock-controller-ui-pressure-label = Chamber pressure:
 airlock-controller-ui-doors-label = Doors:
+airlock-controller-ui-chamber-sensors-label = Chamber sensors:
 airlock-controller-ui-address-label = Address:
 
 airlock-controller-ui-pressure-value = {$pressure} kPa

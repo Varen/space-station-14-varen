@@ -127,6 +127,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
                 report.Boltable = boltable;
 
             comp.DoorReports[args.SenderAddress] = report;
+            comp.ReportsChanged = true;
             return;
         }
 
@@ -328,14 +329,25 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (!TryComp<DeviceNetworkComponent>(door, out var doorNet) || doorNet.ReceiveFrequency == null)
             return;
 
-        var payload = new NetworkPayload
-        {
-            [DeviceNetworkConstants.Command] = command,
-            [DoorNetworkCommands.ReplyNetId] = net.DeviceNetId,
-            [DoorNetworkCommands.ReplyFrequency] = net.ReceiveFrequency.Value,
-        };
+        Send(command);
 
-        _deviceNetwork.QueuePacket(ent, address, payload, doorNet.ReceiveFrequency.Value, doorNet.DeviceNetId);
+        // Bolting is instant, no need to wait for answer like with close/open
+        if (command is DoorNetworkCommands.Bolt or DoorNetworkCommands.Unbolt)
+            Send(DoorNetworkCommands.Sync);
+
+        return;
+
+        void Send(string send)
+        {
+            var payload = new NetworkPayload
+            {
+                [DeviceNetworkConstants.Command] = send,
+                [DoorNetworkCommands.ReplyNetId] = net.DeviceNetId,
+                [DoorNetworkCommands.ReplyFrequency] = net.ReceiveFrequency.Value,
+            };
+
+            _deviceNetwork.QueuePacket(ent, address, payload, doorNet.ReceiveFrequency.Value, doorNet.DeviceNetId);
+        }
     }
 
     #endregion
@@ -477,38 +489,84 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
         while (query.MoveNext(out var uid, out var comp))
         {
-            if (now < comp.NextUpdate)
-                continue;
-
-            comp.NextUpdate = now + comp.UpdateInterval;
-
-            PruneCaches((uid, comp));
-            _status.Apply(uid, GetStatus((uid, comp)));
-            UpdateCyclers((uid, comp));
-
             var cycling = !comp.MaintenanceMode && comp.State != AirlockCycleState.Idle;
-            var uiOpen = UserInterfaceSystem.IsUiOpen(uid, AirlockControllerUiKey.Key)
-                         || UserInterfaceSystem.IsUiOpen(uid, AirlockControllerUiKey.Config);
-
-            if (cycling || uiOpen)
-                SyncAtmosDevices((uid, comp));
-
-            if (uiOpen)
-                UpdateUi((uid, comp));
-
             var restoring = !comp.MaintenanceMode && comp.RestoreDoors;
 
-            if (cycling || restoring)
-                PollDoors((uid, comp));
+            if (now >= comp.NextSync)
+            {
+                comp.NextSync = now + comp.UpdateInterval;
+                UpdateAtmosPace((uid, comp), now, cycling);
+            }
+
+            // Doors are slow to answer
+            if (WaitingOnDoors(comp))
+                UpdateDoorPace((uid, comp), now, cycling, restoring);
+        }
+    }
+
+    /// <summary>
+    ///     States where a door reply is the only thing we're waiting for
+    /// </summary>
+    private static bool WaitingOnDoors(AirlockControllerComponent comp)
+    {
+        if (comp.MaintenanceMode)
+            return false;
+
+        return comp.RestoreDoors
+               || comp.State is AirlockCycleState.Sealing or AirlockCycleState.Unsealing;
+    }
+
+    /// <summary>
+    ///     Housekeeping, sensors and the pumping states
+    /// </summary>
+    private void UpdateAtmosPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling)
+    {
+        PruneCaches(ent);
+        _status.Apply(ent, GetStatus(ent));
+        UpdateCyclers(ent);
+
+        var uiOpen = UserInterfaceSystem.IsUiOpen(ent.Owner, AirlockControllerUiKey.Key)
+                     || UserInterfaceSystem.IsUiOpen(ent.Owner, AirlockControllerUiKey.Config);
+
+        if (cycling || uiOpen)
+            SyncAtmosDevices(ent);
+
+        if (uiOpen)
+            UpdateUi(ent);
+
+        // Seal check while pumping
+        if (!cycling || WaitingOnDoors(ent.Comp))
+            return;
+
+        UpdateCycle(ent, now);
+        PollDoors(ent);
+    }
+
+    /// <summary>
+    ///     Replies move the state, poll when waiting while door animates
+    /// </summary>
+    private void UpdateDoorPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling, bool restoring)
+    {
+        var comp = ent.Comp;
+
+        if (comp.ReportsChanged)
+        {
+            comp.ReportsChanged = false;
 
             if (restoring)
-                UpdateDoorRestore((uid, comp));
+                UpdateDoorRestore(ent);
 
-            if (!cycling)
-                continue;
+            if (cycling)
+                UpdateCycle(ent, now);
 
-            UpdateCycle((uid, comp), now);
+            return;
         }
+
+        if (now < comp.NextPoll)
+            return;
+
+        comp.NextPoll = now + comp.DoorPollInterval;
+        PollDoors(ent);
     }
 
     private void SyncAtmosDevices(Entity<AirlockControllerComponent> ent)
@@ -690,23 +748,47 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         // Re-sent every tick or vents can get status stuck
         ApplyVents(ent, siphon: true);
 
-        if (!TryGetChamberPressure(ent, out var average))
+        if (!TryGetChamberPressure(ent, out var reading))
         {
             comp.StallReason = AirlockStallReason.NoSensors;
             return;
         }
 
-        // Wait for atmos to catch up
-        if (average <= comp.EvacuatedPressure)
+        // The fullest tile is the one still holding gas
+        var gate = reading.Max;
+
+        if (gate <= comp.EvacuatedPressure)
         {
-            if (++comp.StableTicks >= comp.RequiredStableTicks)
+            if (HasSettled(ent, gate))
                 SetState(ent, AirlockCycleState.Filling);
 
             return;
         }
 
-        comp.StableTicks = 0;
-        CheckProgress(ent, average, now, AirlockStallReason.NotProgressing);
+        ResetSettle(ent);
+        CheckProgress(ent, gate, now, AirlockStallReason.NotProgressing);
+    }
+
+    /// <summary>
+    ///     If gas is still changing atmos is still churning. Wait for it to settle.
+    ///     Has a max waiting time just in case.
+    /// </summary>
+    private static bool HasSettled(Entity<AirlockControllerComponent> ent, float gate)
+    {
+        var comp = ent.Comp;
+
+        var settled = !float.IsNaN(comp.LastChamberReading)
+                      && MathF.Abs(gate - comp.LastChamberReading) <= comp.SettleTolerance;
+
+        comp.LastChamberReading = gate;
+
+        return settled || ++comp.SettleTicks >= comp.MaxSettleTicks;
+    }
+
+    private static void ResetSettle(Entity<AirlockControllerComponent> ent)
+    {
+        ent.Comp.SettleTicks = 0;
+        ent.Comp.LastChamberReading = float.NaN;
     }
 
     private void UpdateFilling(Entity<AirlockControllerComponent> ent, TimeSpan now)
@@ -715,7 +797,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
         ApplyVents(ent, siphon: false);
 
-        if (!TryGetChamberPressure(ent, out var average))
+        if (!TryGetChamberPressure(ent, out var reading))
         {
             comp.StallReason = AirlockStallReason.NoSensors;
             return;
@@ -723,16 +805,19 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
         var target = GetTargetPressure(ent, comp.TargetSide);
 
-        if (MathF.Abs(average - target) <= comp.PressureTolerance)
+        // The emptiest tile is the one still filling
+        var gate = reading.Min;
+
+        if (gate >= target - comp.PressureTolerance)
         {
-            if (++comp.StableTicks >= comp.RequiredStableTicks)
+            if (HasSettled(ent, gate))
                 SetState(ent, AirlockCycleState.Unsealing);
 
             return;
         }
 
-        comp.StableTicks = 0;
-        CheckProgress(ent, average, now, AirlockStallReason.NotProgressing);
+        ResetSettle(ent);
+        CheckProgress(ent, gate, now, AirlockStallReason.NotProgressing);
     }
 
     /// <summary>
@@ -814,7 +899,11 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         comp.State = state;
         comp.LastProgressValue = float.NaN;
         comp.LastProgressTime = _timing.CurTime;
-        comp.StableTicks = 0;
+        ResetSettle(ent);
+
+        // Whatever the last state heard doesn't answer this one
+        comp.ReportsChanged = false;
+        comp.NextPoll = TimeSpan.Zero;
 
         switch (state)
         {
@@ -899,14 +988,13 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
     #region Atmos devices
 
-    /// <summary>
-    ///     Averages out all chamber sensors
-    /// </summary>
-    private bool TryGetChamberPressure(Entity<AirlockControllerComponent> ent, out float average)
+    private bool TryGetChamberPressure(Entity<AirlockControllerComponent> ent, out AirlockChamberReading reading)
     {
         var comp = ent.Comp;
 
-        average = 0f;
+        var min = float.MaxValue;
+        var max = float.MinValue;
+        var total = 0f;
         var count = 0;
 
         foreach (var (address, device) in LiveDevices(ent))
@@ -918,14 +1006,19 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             if (!comp.SensorData.TryGetValue(address, out var sensor))
                 continue;
 
-            average += sensor.Pressure;
+            min = MathF.Min(min, sensor.Pressure);
+            max = MathF.Max(max, sensor.Pressure);
+            total += sensor.Pressure;
             count++;
         }
 
         if (count == 0)
+        {
+            reading = default;
             return false;
+        }
 
-        average /= count;
+        reading = new AirlockChamberReading(min, max, total / count, count);
         return true;
     }
 
@@ -1109,7 +1202,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (comp.CyclerRoles.Count == 0)
             return;
 
-        var pressure = TryGetChamberPressure(ent, out var reading) ? reading : (float?)null;
+        var pressure = TryGetChamberPressure(ent, out var reading) ? reading.Mean : (float?)null;
         var status = GetStatus(ent);
 
         foreach (var device in _deviceList.GetDeviceList(ent.Owner).Values)

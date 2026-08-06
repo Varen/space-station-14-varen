@@ -134,6 +134,7 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
         CMaintenanceCheck.Pressed = config.MaintenanceMode;
         CAddressLabel.SetMarkup(state.Address);
         CDoorsLabel.SetMarkup(state.DoorCount.ToString());
+        CChamberSensorsLabel.SetMarkup(state.ChamberSensorCount.ToString());
 
         var onA = state.CurrentSide == AirlockSide.A;
 

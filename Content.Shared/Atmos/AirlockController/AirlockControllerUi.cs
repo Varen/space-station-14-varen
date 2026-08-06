@@ -65,6 +65,11 @@ public sealed class AirlockControllerConfigUiState : BoundUserInterfaceState
 
     public int DoorCount;
 
+    /// <summary>
+    ///     Sensors left inside the chamber.
+    /// </summary>
+    public int ChamberSensorCount;
+
     public AirlockSide CurrentSide;
 
     /// <summary>

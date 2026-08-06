@@ -151,7 +151,7 @@ public sealed partial class AirlockControllerSystem
             StallReason = comp.StallReason,
             CancelRequested = comp.CancelRequested,
             MaintenanceMode = comp.MaintenanceMode,
-            ChamberPressure = TryGetChamberPressure(ent, out var pressure) ? pressure : null,
+            ChamberPressure = TryGetChamberPressure(ent, out var reading) ? reading.Mean : null,
         };
 
         UserInterfaceSystem.SetUiState(ent.Owner, AirlockControllerUiKey.Key, state);
@@ -213,6 +213,7 @@ public sealed partial class AirlockControllerSystem
         var devices = _deviceList.GetDeviceList(ent.Owner);
         var entries = new List<AirlockDeviceEntry>();
         var sensors = new List<AirlockSensorOption>();
+        var chamberSensors = 0;
 
         foreach (var (address, uid) in devices)
         {
@@ -239,6 +240,10 @@ public sealed partial class AirlockControllerSystem
                 });
             }
 
+            // Whatever isn't watching a side is watching the chamber
+            if (entry.IsSensor && !comp.TargetSensors.ContainsValue(uid))
+                chamberSensors++;
+
             entries.Add(entry);
         }
 
@@ -255,6 +260,7 @@ public sealed partial class AirlockControllerSystem
             Devices = entries,
             Address = CompOrNull<DeviceNetworkComponent>(ent)?.Address ?? string.Empty,
             DoorCount = BoundDoors(ent).Count,
+            ChamberSensorCount = chamberSensors,
             CurrentSide = comp.CurrentSide,
             Sensors = sensors,
             TargetPressureA = SensorReading(comp, devices, AirlockSide.A),

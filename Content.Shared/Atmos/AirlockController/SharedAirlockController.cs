@@ -103,6 +103,11 @@ public enum AirlockStallReason : byte
 }
 
 /// <summary>
+///     What the chamber sensors say, min/max/mean used in different phases
+/// </summary>
+public readonly record struct AirlockChamberReading(float Min, float Max, float Mean, int Sensors);
+
+/// <summary>
 ///     What a controller or one of its panels is currently showing the player.
 /// </summary>
 [Serializable, NetSerializable]
