@@ -91,7 +91,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             comp.SensorData.Remove(net.Address);
             comp.DoorReports.Remove(net.Address);
 
-            // Panels cache their binding, so they need telling
+            // Panels cache their binding
             if (comp.CyclerRoles.Remove(device))
             {
                 OnCyclerUnassigned((ent, comp), device);
@@ -329,25 +329,14 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (!TryComp<DeviceNetworkComponent>(door, out var doorNet) || doorNet.ReceiveFrequency == null)
             return;
 
-        Send(command);
-
-        // Bolting is instant, no need to wait for answer like with close/open
-        if (command is DoorNetworkCommands.Bolt or DoorNetworkCommands.Unbolt)
-            Send(DoorNetworkCommands.Sync);
-
-        return;
-
-        void Send(string send)
+        var payload = new NetworkPayload
         {
-            var payload = new NetworkPayload
-            {
-                [DeviceNetworkConstants.Command] = send,
-                [DoorNetworkCommands.ReplyNetId] = net.DeviceNetId,
-                [DoorNetworkCommands.ReplyFrequency] = net.ReceiveFrequency.Value,
-            };
+            [DeviceNetworkConstants.Command] = command,
+            [DoorNetworkCommands.ReplyNetId] = net.DeviceNetId,
+            [DoorNetworkCommands.ReplyFrequency] = net.ReceiveFrequency.Value,
+        };
 
-            _deviceNetwork.QueuePacket(ent, address, payload, doorNet.ReceiveFrequency.Value, doorNet.DeviceNetId);
-        }
+        _deviceNetwork.QueuePacket(ent, address, payload, doorNet.ReceiveFrequency.Value, doorNet.DeviceNetId);
     }
 
     #endregion
@@ -495,7 +484,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             if (now >= comp.NextSync)
             {
                 comp.NextSync = now + comp.UpdateInterval;
-                UpdateAtmosPace((uid, comp), now, cycling);
+                UpdateAtmosPace((uid, comp), now, cycling, restoring);
             }
 
             // Doors are slow to answer
@@ -519,7 +508,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     /// <summary>
     ///     Housekeeping, sensors and the pumping states
     /// </summary>
-    private void UpdateAtmosPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling)
+    private void UpdateAtmosPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling, bool restoring)
     {
         PruneCaches(ent);
         _status.Apply(ent, GetStatus(ent));
@@ -534,39 +523,34 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (uiOpen)
             UpdateUi(ent);
 
-        // Seal check while pumping
-        if (!cycling || WaitingOnDoors(ent.Comp))
+        if (!cycling && !restoring)
             return;
 
-        UpdateCycle(ent, now);
+        // Catches a door that went quiet
         PollDoors(ent);
+
+        // Seal check while pumping
+        if (cycling && !WaitingOnDoors(ent.Comp))
+            UpdateCycle(ent, now);
     }
 
     /// <summary>
-    ///     Replies move the state, poll when waiting while door animates
+    ///     A door telling us it moved is what advances these states
     /// </summary>
     private void UpdateDoorPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling, bool restoring)
     {
         var comp = ent.Comp;
 
-        if (comp.ReportsChanged)
-        {
-            comp.ReportsChanged = false;
-
-            if (restoring)
-                UpdateDoorRestore(ent);
-
-            if (cycling)
-                UpdateCycle(ent, now);
-
-            return;
-        }
-
-        if (now < comp.NextPoll)
+        if (!comp.ReportsChanged)
             return;
 
-        comp.NextPoll = now + comp.DoorPollInterval;
-        PollDoors(ent);
+        comp.ReportsChanged = false;
+
+        if (restoring)
+            UpdateDoorRestore(ent);
+
+        if (cycling)
+            UpdateCycle(ent, now);
     }
 
     private void SyncAtmosDevices(Entity<AirlockControllerComponent> ent)
@@ -903,7 +887,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
         // Whatever the last state heard doesn't answer this one
         comp.ReportsChanged = false;
-        comp.NextPoll = TimeSpan.Zero;
 
         switch (state)
         {
@@ -933,6 +916,10 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
                 StopVents(ent);
                 break;
         }
+
+        // A door already in position never pushes
+        if (WaitingOnDoors(comp))
+            PollDoors(ent);
 
         UpdateOutputs(ent);
         UpdateUi(ent);
@@ -1059,8 +1046,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var target = siphon ? 0f : GetTargetPressure(ent, side);
         var used = false;
 
-        // Everything registered gets a command, so an unassigned vent can't keep running on
-        // whatever an air alarm last told it
+        // Everything registered gets a command, assigned or not
         foreach (var (address, device) in LiveDevices(ent))
         {
             comp.VentRoles.TryGetValue(device, out var roles);
@@ -1193,7 +1179,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     }
 
     /// <summary>
-    ///     Pushes our state to the panels, which is also what binds them
+    ///     Pushes our state to the panels, and binds them
     /// </summary>
     private void UpdateCyclers(Entity<AirlockControllerComponent> ent)
     {
@@ -1262,6 +1248,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     {
         ent.Comp.DoorReports.Clear();
         ent.Comp.RestoreDoors = true;
+
+        // A door already in position never pushes
+        PollDoors(ent);
     }
 
     /// <summary>

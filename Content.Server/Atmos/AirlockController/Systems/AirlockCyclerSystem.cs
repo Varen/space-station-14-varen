@@ -50,7 +50,7 @@ public sealed class AirlockCyclerSystem : EntitySystem
             if (comp.Controller is { } controller && TerminatingOrDeleted(controller))
                 comp.Controller = null;
 
-            // Bound panels are written by their controller, the rest are our own problem
+            // Bound panels are written by their controller
             if (comp.Controller == null)
             {
                 comp.ChamberPressure = null;

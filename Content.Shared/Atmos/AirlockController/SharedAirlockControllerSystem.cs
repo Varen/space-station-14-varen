@@ -40,8 +40,7 @@ public abstract class SharedAirlockControllerSystem : EntitySystem
     }
 
     /// <summary>
-    ///     Assumed yes, the window only opens for someone who already passed. IsAllowed would
-    ///     also log an access we'd roll back.
+    ///     Assumed yes, the window only opens for someone who already passed
     /// </summary>
     protected virtual bool CanEdit(Entity<AirlockControllerComponent> ent, EntityUid actor)
     {
@@ -72,7 +71,7 @@ public abstract class SharedAirlockControllerSystem : EntitySystem
     }
 
     /// <summary>
-    ///     Panels cache their binding, so dropping one has to tell it
+    ///     Tells a dropped panel it's no longer claimed
     /// </summary>
     protected virtual void OnCyclerUnassigned(Entity<AirlockControllerComponent> ent, EntityUid cycler)
     {

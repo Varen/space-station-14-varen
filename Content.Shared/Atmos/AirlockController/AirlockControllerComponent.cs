@@ -166,15 +166,6 @@ public sealed partial class AirlockControllerComponent : Component
     public bool ReportsChanged;
 
     /// <summary>
-    ///     Poll for door for status while animation progresses
-    /// </summary>
-    [DataField]
-    public TimeSpan DoorPollInterval = TimeSpan.FromSeconds(0.1);
-
-    [ViewVariables]
-    public TimeSpan NextPoll;
-
-    /// <summary>
     ///     Used for stalling detection
     /// </summary>
     [ViewVariables]
