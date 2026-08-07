@@ -11,12 +11,4 @@ public sealed partial class AirlockControllerVisualsComponent : Component
     [DataField(required: true)]
     public Dictionary<AirlockControllerDisplay, string> DisplaySprites = new();
 
-    [DataField]
-    public List<AirlockControllerVisualLayers> HideOnDepowered = new()
-    {
-        AirlockControllerVisualLayers.State,
-        AirlockControllerVisualLayers.Display,
-        AirlockControllerVisualLayers.Error,
-        AirlockControllerVisualLayers.Light,
-    };
 }

@@ -157,11 +157,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
     #region Door assignment
 
-    private bool InDeviceList(Entity<AirlockControllerComponent> ent, EntityUid device)
-    {
-        return _deviceList.GetDeviceList(ent.Owner).ContainsValue(device);
-    }
-
     /// <summary>
     ///     Mapping runs before map init, used to skip to the config menu directly
     /// </summary>
@@ -171,50 +166,24 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     }
 
     /// <summary>
-    ///     Drops cached entries for devices that are gone.
+    ///     Drops config entries for devices that are gone.
     /// </summary>
     private void PruneCaches(Entity<AirlockControllerComponent> ent)
     {
         var comp = ent.Comp;
-        var devices = _deviceList.GetDeviceList(ent.Owner);
 
-        Prune(comp.VentData, devices);
-        Prune(comp.ScrubberData, devices);
-        Prune(comp.SensorData, devices);
-        Prune(comp.DoorReports, devices);
-
-        // Config is networked
         var dropped = PruneDeleted(comp.VentRoles)
-                      | PruneDeletedValues(comp.TargetSensors)
                       | PruneDeleted(comp.DoorRoles)
                       | PruneDeleted(comp.CyclerRoles);
 
+        if (comp.TargetSensors.TryGetValue(AirlockSide.A, out var sensorA) && TerminatingOrDeleted(sensorA))
+            dropped |= comp.TargetSensors.Remove(AirlockSide.A);
+
+        if (comp.TargetSensors.TryGetValue(AirlockSide.B, out var sensorB) && TerminatingOrDeleted(sensorB))
+            dropped |= comp.TargetSensors.Remove(AirlockSide.B);
+
         if (dropped)
             Dirty(ent);
-    }
-
-    private bool PruneDeletedValues<TKey>(Dictionary<TKey, EntityUid> config) where TKey : notnull
-    {
-        List<TKey>? gone = null;
-
-        foreach (var (key, device) in config)
-        {
-            if (!TerminatingOrDeleted(device))
-                continue;
-
-            gone ??= new List<TKey>();
-            gone.Add(key);
-        }
-
-        if (gone == null)
-            return false;
-
-        foreach (var key in gone)
-        {
-            config.Remove(key);
-        }
-
-        return true;
     }
 
     private bool PruneDeleted<T>(Dictionary<EntityUid, T> config)
@@ -241,44 +210,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         return true;
     }
 
-    private static void Prune<T>(Dictionary<string, T> cache, Dictionary<string, EntityUid> devices)
-    {
-        List<string>? stale = null;
-
-        foreach (var address in cache.Keys)
-        {
-            if (devices.ContainsKey(address))
-                continue;
-
-            stale ??= new List<string>();
-            stale.Add(address);
-        }
-
-        if (stale == null)
-            return;
-
-        foreach (var address in stale)
-        {
-            cache.Remove(address);
-        }
-    }
-
-    /// <summary>
-    ///     Devices that are ok to use right now
-    /// </summary>
-    private Dictionary<string, EntityUid> LiveDevices(Entity<AirlockControllerComponent> ent)
-    {
-        var live = new Dictionary<string, EntityUid>();
-
-        foreach (var (address, device) in _deviceList.GetDeviceList(ent.Owner))
-        {
-            if (_power.IsPowered(device))
-                live.Add(address, device);
-        }
-
-        return live;
-    }
-
     /// <summary>
     ///     Assigned doors that are still bound to us
     /// </summary>
@@ -298,27 +229,18 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     /// <summary>
     ///     Check if we got both side doors to cycle
     /// </summary>
-    private bool CanCycle(Entity<AirlockControllerComponent> ent, out AirlockStallReason missing)
+    private bool CanCycle(Entity<AirlockControllerComponent> ent)
     {
         var hasA = false;
         var hasB = false;
 
         foreach (var (_, _, side) in BoundDoors(ent))
         {
-            if (side == AirlockSide.A)
-                hasA = true;
-            else
-                hasB = true;
+            hasA |= side == AirlockSide.A;
+            hasB |= side == AirlockSide.B;
         }
 
-        if (!hasA || !hasB)
-        {
-            missing = AirlockStallReason.MissingDoors;
-            return false;
-        }
-
-        missing = default;
-        return true;
+        return hasA && hasB;
     }
 
     private void SendDoorCommand(Entity<AirlockControllerComponent> ent, EntityUid door, string address, string command)
@@ -375,9 +297,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         }
 
         // Error out if doors are missing
-        if (!CanCycle(ent, out var missing))
+        if (!CanCycle(ent))
         {
-            comp.StallReason = missing;
+            comp.StallReason = AirlockStallReason.MissingDoors;
             UpdateUi(ent);
             return false;
         }
@@ -488,8 +410,16 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             }
 
             // Doors are slow to answer
-            if (WaitingOnDoors(comp))
-                UpdateDoorPace((uid, comp), now, cycling, restoring);
+            if (!comp.ReportsChanged || !WaitingOnDoors(comp))
+                continue;
+
+            comp.ReportsChanged = false;
+
+            if (restoring)
+                UpdateDoorRestore((uid, comp));
+
+            if (cycling)
+                UpdateCycle((uid, comp), now);
         }
     }
 
@@ -518,7 +448,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
                      || UserInterfaceSystem.IsUiOpen(ent.Owner, AirlockControllerUiKey.Config);
 
         if (cycling || uiOpen)
-            SyncAtmosDevices(ent);
+            _atmosDevNet.Sync(ent, null);
 
         if (uiOpen)
             UpdateUi(ent);
@@ -532,33 +462,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         // Seal check while pumping
         if (cycling && !WaitingOnDoors(ent.Comp))
             UpdateCycle(ent, now);
-    }
-
-    /// <summary>
-    ///     A door telling us it moved is what advances these states
-    /// </summary>
-    private void UpdateDoorPace(Entity<AirlockControllerComponent> ent, TimeSpan now, bool cycling, bool restoring)
-    {
-        var comp = ent.Comp;
-
-        if (!comp.ReportsChanged)
-            return;
-
-        comp.ReportsChanged = false;
-
-        if (restoring)
-            UpdateDoorRestore(ent);
-
-        if (cycling)
-            UpdateCycle(ent, now);
-    }
-
-    private void SyncAtmosDevices(Entity<AirlockControllerComponent> ent)
-    {
-        foreach (var address in _deviceList.GetDeviceList(ent.Owner).Keys)
-        {
-            _atmosDevNet.Sync(ent, address);
-        }
     }
 
     /// <summary>
@@ -638,9 +541,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     {
         var comp = ent.Comp;
 
-        if (!CanCycle(ent, out var missing))
+        if (!CanCycle(ent))
         {
-            comp.StallReason = missing;
+            comp.StallReason = AirlockStallReason.MissingDoors;
             return;
         }
 
@@ -658,10 +561,8 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
                 UpdateSealing(ent, now);
                 break;
             case AirlockCycleState.Evacuating:
-                UpdateEvacuating(ent, now);
-                break;
             case AirlockCycleState.Filling:
-                UpdateFilling(ent, now);
+                UpdatePumping(ent, now);
                 break;
             case AirlockCycleState.Unsealing:
                 UpdateUnsealing(ent, now);
@@ -675,16 +576,12 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     private void UpdateSealing(Entity<AirlockControllerComponent> ent, TimeSpan now)
     {
         var comp = ent.Comp;
-        var doors = BoundDoors(ent);
-
-        if (doors.Count == 0)
-            return;
 
         // Doors that are where we want them, stall only when nothing moves
         var progress = 0;
         var allSealed = true;
 
-        foreach (var (door, address, _) in doors)
+        foreach (var (door, address, _) in BoundDoors(ent))
         {
             // No report yet, PollDoors will ask again
             if (!comp.DoorReports.TryGetValue(address, out var report))
@@ -725,12 +622,13 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         SetState(ent, AirlockCycleState.Evacuating);
     }
 
-    private void UpdateEvacuating(Entity<AirlockControllerComponent> ent, TimeSpan now)
+    private void UpdatePumping(Entity<AirlockControllerComponent> ent, TimeSpan now)
     {
         var comp = ent.Comp;
+        var siphon = comp.State == AirlockCycleState.Evacuating;
 
         // Re-sent every tick or vents can get status stuck
-        ApplyVents(ent, siphon: true);
+        ApplyVents(ent, siphon);
 
         if (!TryGetChamberPressure(ent, out var reading))
         {
@@ -738,13 +636,17 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             return;
         }
 
-        // The fullest tile is the one still holding gas
-        var gate = reading.Max;
+        // The fullest tile is the one still holding gas, the emptiest the one still filling
+        var gate = siphon ? reading.Max : reading.Min;
 
-        if (gate <= comp.EvacuatedPressure)
+        var reached = siphon
+            ? gate <= comp.EvacuatedPressure
+            : gate >= GetTargetPressure(ent, comp.TargetSide) - comp.PressureTolerance;
+
+        if (reached)
         {
             if (HasSettled(ent, gate))
-                SetState(ent, AirlockCycleState.Filling);
+                SetState(ent, siphon ? AirlockCycleState.Filling : AirlockCycleState.Unsealing);
 
             return;
         }
@@ -773,35 +675,6 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     {
         ent.Comp.SettleTicks = 0;
         ent.Comp.LastChamberReading = float.NaN;
-    }
-
-    private void UpdateFilling(Entity<AirlockControllerComponent> ent, TimeSpan now)
-    {
-        var comp = ent.Comp;
-
-        ApplyVents(ent, siphon: false);
-
-        if (!TryGetChamberPressure(ent, out var reading))
-        {
-            comp.StallReason = AirlockStallReason.NoSensors;
-            return;
-        }
-
-        var target = GetTargetPressure(ent, comp.TargetSide);
-
-        // The emptiest tile is the one still filling
-        var gate = reading.Min;
-
-        if (gate >= target - comp.PressureTolerance)
-        {
-            if (HasSettled(ent, gate))
-                SetState(ent, AirlockCycleState.Unsealing);
-
-            return;
-        }
-
-        ResetSettle(ent);
-        CheckProgress(ent, gate, now, AirlockStallReason.NotProgressing);
     }
 
     /// <summary>
@@ -843,7 +716,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             progress++;
         }
 
-        if (total == 0 || progress < total * 2)
+        if (progress < total * 2)
         {
             CheckProgress(ent, progress, now, AirlockStallReason.NotOpening);
             return;
@@ -936,12 +809,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     {
         var comp = ent.Comp;
 
-        var doors = BoundDoors(ent);
-
-        if (doors.Count == 0)
-            return false;
-
-        foreach (var (_, address, _) in doors)
+        foreach (var (_, address, _) in BoundDoors(ent))
         {
             if (!comp.DoorReports.TryGetValue(address, out var report) || report.Open)
                 return false;
@@ -984,10 +852,10 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var total = 0f;
         var count = 0;
 
-        foreach (var (address, device) in LiveDevices(ent))
+        foreach (var (address, device) in _deviceList.GetDeviceList(ent.Owner))
         {
             // Exclude outside sensors
-            if (comp.TargetSensors.ContainsValue(device))
+            if (!_power.IsPowered(device) || comp.TargetSensors.ContainsValue(device))
                 continue;
 
             if (!comp.SensorData.TryGetValue(address, out var sensor))
@@ -1005,7 +873,7 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
             return false;
         }
 
-        reading = new AirlockChamberReading(min, max, total / count, count);
+        reading = new AirlockChamberReading(min, max, total / count);
         return true;
     }
 
@@ -1047,22 +915,28 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         var used = false;
 
         // Everything registered gets a command, assigned or not
-        foreach (var (address, device) in LiveDevices(ent))
+        foreach (var (address, device) in _deviceList.GetDeviceList(ent.Owner))
         {
+            if (!_power.IsPowered(device))
+                continue;
+
             comp.VentRoles.TryGetValue(device, out var roles);
 
             var wants = (roles & wanted) != 0;
 
             if (comp.VentData.ContainsKey(address))
             {
-                SetVent(ent, address, wants ? (siphon ? Siphoning() : Releasing(target)) : DisabledVent());
+                SetVent(ent, address, wants && !siphon
+                    ? Vent(true, VentPumpDirection.Releasing, target)
+                    : Vent(wants, VentPumpDirection.Siphoning));
+
                 used |= wants;
             }
             else if (comp.ScrubberData.ContainsKey(address))
             {
                 // Scrubbers can only siphon
                 var useScrubber = wants && siphon;
-                SetScrubber(ent, address, useScrubber ? SiphoningScrubber() : DisabledScrubber());
+                SetScrubber(ent, address, Scrubber(useScrubber));
                 used |= useScrubber;
             }
         }
@@ -1075,9 +949,9 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         foreach (var (address, _) in _deviceList.GetDeviceList(ent.Owner))
         {
             if (ent.Comp.VentData.ContainsKey(address))
-                SetVent(ent, address, DisabledVent());
+                SetVent(ent, address, Vent(false, VentPumpDirection.Siphoning));
             else if (ent.Comp.ScrubberData.ContainsKey(address))
-                SetScrubber(ent, address, DisabledScrubber());
+                SetScrubber(ent, address, Scrubber(false));
         }
     }
 
@@ -1096,56 +970,29 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
     }
 
     // PressureLockoutOverride needed otherwise stuff won't work in vacuum
-    private static GasVentPumpData Siphoning() => new()
+    private static GasVentPumpData Vent(bool enabled, VentPumpDirection direction, float bound = Atmospherics.OneAtmosphere) => new()
     {
-        Enabled = true,
+        Enabled = enabled,
         Dirty = true,
         IgnoreAlarms = true,
-        PumpDirection = VentPumpDirection.Siphoning,
-        PressureChecks = VentPressureBound.NoBound,
-        PressureLockoutOverride = true,
-    };
-
-    private static GasVentPumpData Releasing(float target) => new()
-    {
-        Enabled = true,
-        Dirty = true,
-        IgnoreAlarms = true,
-        PumpDirection = VentPumpDirection.Releasing,
-        PressureChecks = VentPressureBound.ExternalBound,
-        ExternalPressureBound = target,
-        PressureLockoutOverride = true,
-    };
-
-    private static GasVentPumpData DisabledVent() => new()
-    {
-        Enabled = false,
-        Dirty = true,
-        IgnoreAlarms = true,
-        PumpDirection = VentPumpDirection.Siphoning,
-        PressureChecks = VentPressureBound.NoBound,
+        PumpDirection = direction,
+        PressureChecks = direction == VentPumpDirection.Releasing
+            ? VentPressureBound.ExternalBound
+            : VentPressureBound.NoBound,
+        ExternalPressureBound = bound,
         PressureLockoutOverride = true,
     };
 
     /// <summary>
     ///     Siphons everything, wide net cause airlocks are boring to wait in
     /// </summary>
-    private static GasVentScrubberData SiphoningScrubber() => new()
+    private static GasVentScrubberData Scrubber(bool enabled) => new()
     {
-        Enabled = true,
+        Enabled = enabled,
         Dirty = true,
         IgnoreAlarms = true,
         PumpDirection = ScrubberPumpDirection.Siphoning,
-        VolumeRate = 200f,
-        WideNet = true,
-    };
-
-    private static GasVentScrubberData DisabledScrubber() => new()
-    {
-        Enabled = false,
-        Dirty = true,
-        IgnoreAlarms = true,
-        PumpDirection = ScrubberPumpDirection.Siphoning,
+        WideNet = enabled,
     };
 
     #endregion
@@ -1291,3 +1138,8 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
 
     #endregion
 }
+
+/// <summary>
+///     What the chamber sensors say, min/max/mean used in different phases
+/// </summary>
+public readonly record struct AirlockChamberReading(float Min, float Max, float Mean);

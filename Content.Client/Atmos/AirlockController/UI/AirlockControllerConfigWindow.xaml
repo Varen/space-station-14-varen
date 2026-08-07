@@ -1,5 +1,4 @@
 <ui:FancyWindow xmlns="https://spacestation14.io"
-            xmlns:x="http://schemas.microsoft.com/winfx/2007/xaml"
             xmlns:ui="clr-namespace:Content.Client.UserInterface.Controls"
             xmlns:gfx="clr-namespace:Robust.Client.Graphics;assembly=Robust.Client"
             MinSize="520 420" Resizable="True" Title="{Loc airlock-controller-config-ui-title}">

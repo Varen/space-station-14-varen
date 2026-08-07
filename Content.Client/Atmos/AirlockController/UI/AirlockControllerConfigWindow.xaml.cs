@@ -9,21 +9,6 @@ using Robust.Client.UserInterface.XAML;
 
 namespace Content.Client.Atmos.AirlockController.UI;
 
-/// <summary>
-///     Everything the player can edit
-/// </summary>
-public sealed class AirlockConfigView
-{
-    public Dictionary<NetEntity, AirlockVentRole> VentRoles = new();
-    public Dictionary<NetEntity, AirlockSide> DoorRoles = new();
-    public Dictionary<NetEntity, AirlockSide> CyclerRoles = new();
-    public NetEntity? TargetSensorA;
-    public NetEntity? TargetSensorB;
-    public float PresetPressureA;
-    public float PresetPressureB;
-    public bool MaintenanceMode;
-}
-
 [GenerateTypedNameReferences]
 public sealed partial class AirlockControllerConfigWindow : FancyWindow
 {
@@ -35,6 +20,8 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
     public event Action<bool>? MaintenanceChanged;
     public event Action<AirlockSide>? ForceSideRequested;
 
+    private readonly IEntityManager _entMan = IoCManager.Resolve<IEntityManager>();
+
     private readonly Dictionary<NetEntity, AirlockDeviceRow> _rows = new();
 
     private const int CustomId = -1;
@@ -44,10 +31,10 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
     /// </summary>
     private List<NetEntity> _options = new();
 
-    private bool _pickersBuilt;
+    private readonly (AirlockSide Side, OptionButton Picker, FloatSpinBox Preset, RichTextLabel Label, Button Force)[] _sides;
 
     private AirlockControllerConfigUiState? _telemetry;
-    private AirlockConfigView? _config;
+    private AirlockControllerComponent? _config;
 
     private bool _updating;
 
@@ -57,19 +44,27 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
 
         CPresetHint.SetMarkup(Loc.GetString("airlock-controller-config-preset-hint"));
 
-        CPresetA.IsValid += value => value >= 0;
-        CPresetB.IsValid += value => value >= 0;
+        _sides =
+        [
+            (AirlockSide.A, CSensorA, CPresetA, CSensorALabel, CForceAButton),
+            (AirlockSide.B, CSensorB, CPresetB, CSensorBLabel, CForceBButton),
+        ];
 
-        CPresetA.OnValueChanged += args => Send(() => PresetChanged?.Invoke(AirlockSide.A, args.Value));
-        CPresetB.OnValueChanged += args => Send(() => PresetChanged?.Invoke(AirlockSide.B, args.Value));
+        foreach (var (side, picker, preset, _, force) in _sides)
+        {
+            preset.IsValid += value => value >= 0;
+            preset.OnValueChanged += args => Send(() => PresetChanged?.Invoke(side, args.Value));
+
+            force.OnPressed += _ => Send(() => ForceSideRequested?.Invoke(side));
+
+            picker.OnItemSelected += args => Send(() =>
+            {
+                picker.TrySelectId(args.Id);
+                TargetSensorChanged?.Invoke(side, args.Id == CustomId ? null : _options[args.Id]);
+            });
+        }
 
         CMaintenanceCheck.OnToggled += args => Send(() => MaintenanceChanged?.Invoke(args.Pressed));
-
-        CForceAButton.OnPressed += _ => Send(() => ForceSideRequested?.Invoke(AirlockSide.A));
-        CForceBButton.OnPressed += _ => Send(() => ForceSideRequested?.Invoke(AirlockSide.B));
-
-        BindSensorPicker(CSensorA, AirlockSide.A);
-        BindSensorPicker(CSensorB, AirlockSide.B);
     }
 
     private void Send(Action send)
@@ -78,15 +73,6 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
             return;
 
         send();
-    }
-
-    private void BindSensorPicker(OptionButton picker, AirlockSide side)
-    {
-        picker.OnItemSelected += args => Send(() =>
-        {
-            picker.TrySelectId(args.Id);
-            TargetSensorChanged?.Invoke(side, args.Id == CustomId ? null : _options[args.Id]);
-        });
     }
 
     /// <summary>
@@ -101,7 +87,7 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
     /// <summary>
     ///     Predicted config
     /// </summary>
-    public void SetConfig(AirlockConfigView config)
+    public void SetConfig(AirlockControllerComponent config)
     {
         _config = config;
         Refresh();
@@ -124,27 +110,44 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
         }
     }
 
-    private void Repaint(AirlockControllerConfigUiState state, AirlockConfigView config)
+    private void Repaint(AirlockControllerConfigUiState state, AirlockControllerComponent config)
     {
         RebuildSensorPickers(state, config);
-
-        ApplyPreset(CPresetA, CSensorALabel, config.PresetPressureA, config.TargetSensorA, state.TargetPressureA);
-        ApplyPreset(CPresetB, CSensorBLabel, config.PresetPressureB, config.TargetSensorB, state.TargetPressureB);
 
         CMaintenanceCheck.Pressed = config.MaintenanceMode;
         CAddressLabel.SetMarkup(state.Address);
         CDoorsLabel.SetMarkup(state.DoorCount.ToString());
         CChamberSensorsLabel.SetMarkup(state.ChamberSensorCount.ToString());
 
-        var onA = state.CurrentSide == AirlockSide.A;
+        CCurrentSideLabel.SetMarkup(Loc.GetString(AirlockControllerLocale.SideKey(state.CurrentSide)));
 
-        CCurrentSideLabel.SetMarkup(Loc.GetString(onA
-            ? "airlock-controller-side-a"
-            : "airlock-controller-side-b"));
+        foreach (var (side, _, preset, label, force) in _sides)
+        {
+            var following = config.TargetSensors.ContainsKey(side);
+            var onA = side == AirlockSide.A;
 
-        // Forcing the side you're already on does nothing
-        CForceAButton.Disabled = onA;
-        CForceBButton.Disabled = !onA;
+            // Hide input field when sensor mode, and vice versa
+            preset.Visible = !following;
+            label.Visible = following;
+
+            // Forcing the side you're already on does nothing
+            force.Disabled = state.CurrentSide == side;
+
+            if (following)
+            {
+                // The pick is predicted, the reading isn't, placeholder it
+                var reading = onA ? state.TargetPressureA : state.TargetPressureB;
+
+                label.SetMarkup(reading is { } value
+                    ? Loc.GetString("airlock-controller-ui-pressure-value", ("pressure", $"{value:0.#}"))
+                    : Loc.GetString("airlock-controller-config-sensor-pending"));
+            }
+            // don't overwrite typing
+            else if (!preset.HasKeyboardFocus())
+            {
+                preset.Value = onA ? config.PresetPressureA : config.PresetPressureB;
+            }
+        }
 
         var seen = new HashSet<NetEntity>();
 
@@ -152,9 +155,11 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
         {
             seen.Add(device.Device);
 
-            config.VentRoles.TryGetValue(device.Device, out var roles);
-            var side = config.DoorRoles.TryGetValue(device.Device, out var assigned) ? assigned : (AirlockSide?)null;
-            var cycler = config.CyclerRoles.TryGetValue(device.Device, out var calls) ? calls : (AirlockSide?)null;
+            var uid = _entMan.GetEntity(device.Device);
+
+            config.VentRoles.TryGetValue(uid, out var roles);
+            var side = config.DoorRoles.TryGetValue(uid, out var assigned) ? assigned : (AirlockSide?)null;
+            var cycler = config.CyclerRoles.TryGetValue(uid, out var calls) ? calls : (AirlockSide?)null;
 
             if (_rows.TryGetValue(device.Device, out var row))
             {
@@ -163,9 +168,9 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
             }
 
             row = new AirlockDeviceRow(device, roles, side, cycler);
-            row.OnDoorSideChanged += (uid, doorSide) => DoorSideChanged?.Invoke(uid, doorSide);
-            row.OnCyclerSideChanged += (uid, cyclerSide) => CyclerSideChanged?.Invoke(uid, cyclerSide);
-            row.OnVentRolesChanged += (uid, ventRoles) => VentRolesChanged?.Invoke(uid, ventRoles);
+            row.OnDoorSideChanged += (net, doorSide) => DoorSideChanged?.Invoke(net, doorSide);
+            row.OnCyclerSideChanged += (net, cyclerSide) => CyclerSideChanged?.Invoke(net, cyclerSide);
+            row.OnVentRolesChanged += (net, ventRoles) => VentRolesChanged?.Invoke(net, ventRoles);
 
             _rows[device.Device] = row;
             CDeviceContainer.AddChild(row);
@@ -184,17 +189,14 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
     /// <summary>
     ///     Custom above pickers, sensors in list order
     /// </summary>
-    private void RebuildSensorPickers(AirlockControllerConfigUiState state, AirlockConfigView config)
+    private void RebuildSensorPickers(AirlockControllerConfigUiState state, AirlockControllerComponent config)
     {
-        var changed = !_pickersBuilt
-                      || _options.Count != state.Sensors.Count
-                      || _options.Where((device, i) => device != state.Sensors[i].Device).Any();
-
-        if (changed)
+        if (_options.Count != state.Sensors.Count
+            || _options.Where((device, i) => device != state.Sensors[i].Device).Any())
         {
             _options = state.Sensors.Select(sensor => sensor.Device).ToList();
 
-            foreach (var picker in new[] { CSensorA, CSensorB })
+            foreach (var (_, picker, _, _, _) in _sides)
             {
                 picker.Clear();
                 picker.AddItem(Loc.GetString("airlock-controller-config-sensor-custom"), CustomId);
@@ -204,48 +206,16 @@ public sealed partial class AirlockControllerConfigWindow : FancyWindow
                     picker.AddItem(state.Sensors[i].Name, i);
                 }
             }
-
-            _pickersBuilt = true;
         }
 
-        SelectSensor(CSensorA, config.TargetSensorA);
-        SelectSensor(CSensorB, config.TargetSensorB);
-    }
-
-    private void SelectSensor(OptionButton picker, NetEntity? selected)
-    {
-        var index = selected is { } device ? _options.IndexOf(device) : -1;
-
-        if (!picker.TrySelectId(index < 0 ? CustomId : index))
-            picker.TrySelectId(CustomId);
-    }
-
-    private static void ApplyPreset(
-        FloatSpinBox box,
-        RichTextLabel label,
-        float pressure,
-        NetEntity? sensor,
-        float? reading)
-    {
-        var following = sensor != null;
-
-        // Hide input field when sensor mode, and vice versa
-        box.Visible = !following;
-        label.Visible = following;
-
-        if (following)
+        foreach (var (side, picker, _, _, _) in _sides)
         {
-            // The pick is predicted, the reading isn't, placeholder it
-            label.SetMarkup(reading is { } value
-                ? Loc.GetString("airlock-controller-ui-pressure-value", ("pressure", $"{value:0.#}"))
-                : Loc.GetString("airlock-controller-config-sensor-pending"));
-            return;
+            var index = config.TargetSensors.TryGetValue(side, out var sensor)
+                ? _options.IndexOf(_entMan.GetNetEntity(sensor))
+                : -1;
+
+            if (!picker.TrySelectId(index < 0 ? CustomId : index))
+                picker.TrySelectId(CustomId);
         }
-
-        // don't overwrite typing
-        if (box.HasKeyboardFocus())
-            return;
-
-        box.Value = pressure;
     }
 }

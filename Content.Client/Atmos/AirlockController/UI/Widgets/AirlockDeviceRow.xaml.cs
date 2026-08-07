@@ -16,6 +16,8 @@ public sealed partial class AirlockDeviceRow : BoxContainer
     public Action<NetEntity, AirlockSide?>? OnCyclerSideChanged;
     public Action<NetEntity, AirlockVentRole>? OnVentRolesChanged;
 
+    private readonly (CheckBox Box, AirlockVentRole Role)[] _ventRoles;
+
     private NetEntity _device;
 
     private bool _updating;
@@ -36,21 +38,24 @@ public sealed partial class AirlockDeviceRow : BoxContainer
                 OnCyclerSideChanged?.Invoke(_device, side);
         };
 
-        BindRole(VentACheck);
-        BindRole(SiphonACheck);
-        BindRole(VentBCheck);
-        BindRole(SiphonBCheck);
+        _ventRoles =
+        [
+            (VentACheck, AirlockVentRole.VentA),
+            (SiphonACheck, AirlockVentRole.SiphonA),
+            (VentBCheck, AirlockVentRole.VentB),
+            (SiphonBCheck, AirlockVentRole.SiphonB),
+        ];
+
+        foreach (var (box, _) in _ventRoles)
+        {
+            box.OnToggled += _ =>
+            {
+                if (!_updating)
+                    OnVentRolesChanged?.Invoke(_device, ReadRoles());
+            };
+        }
 
         SetData(device, roles, doorSide, cyclerSide);
-    }
-
-    private void BindRole(CheckBox check)
-    {
-        check.OnToggled += _ =>
-        {
-            if (!_updating)
-                OnVentRolesChanged?.Invoke(_device, ReadRoles());
-        };
     }
 
     /// <summary>
@@ -60,17 +65,11 @@ public sealed partial class AirlockDeviceRow : BoxContainer
     {
         var roles = AirlockVentRole.None;
 
-        if (VentACheck.Pressed)
-            roles |= AirlockVentRole.VentA;
-
-        if (SiphonACheck.Pressed)
-            roles |= AirlockVentRole.SiphonA;
-
-        if (VentBCheck.Pressed)
-            roles |= AirlockVentRole.VentB;
-
-        if (SiphonBCheck.Pressed)
-            roles |= AirlockVentRole.SiphonB;
+        foreach (var (box, role) in _ventRoles)
+        {
+            if (box.Pressed)
+                roles |= role;
+        }
 
         return roles;
     }
@@ -94,15 +93,12 @@ public sealed partial class AirlockDeviceRow : BoxContainer
 
             VentBox.Visible = device.IsVent || device.IsScrubber;
 
-            // Scrubbers can only siphon
-            var canRelease = device.IsVent;
-            VentACheck.Visible = canRelease;
-            VentBCheck.Visible = canRelease;
-
-            VentACheck.Pressed = (roles & AirlockVentRole.VentA) != 0;
-            SiphonACheck.Pressed = (roles & AirlockVentRole.SiphonA) != 0;
-            VentBCheck.Pressed = (roles & AirlockVentRole.VentB) != 0;
-            SiphonBCheck.Pressed = (roles & AirlockVentRole.SiphonB) != 0;
+            foreach (var (box, role) in _ventRoles)
+            {
+                // Scrubbers can only siphon
+                box.Visible = device.IsVent || role is AirlockVentRole.SiphonA or AirlockVentRole.SiphonB;
+                box.Pressed = (roles & role) != 0;
+            }
         }
         finally
         {

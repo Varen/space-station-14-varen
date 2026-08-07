@@ -1,3 +1,4 @@
+using System.Linq;
 using Content.Server.Atmos.AirlockController.Components;
 using Content.Server.Atmos.Monitor.Components;
 using Content.Server.Atmos.Piping.Unary.Components;
@@ -43,7 +44,17 @@ public sealed partial class AirlockControllerSystem
 
     protected override void UpdateUi(Entity<AirlockControllerComponent> ent)
     {
-        UpdateStatusUi(ent);
+        var state = new AirlockControllerUiState
+        {
+            Status = GetStatus(ent),
+            CancelRequested = ent.Comp.CancelRequested,
+            ChamberPressure = TryGetChamberPressure(ent, out var reading) ? reading.Mean : null,
+        };
+
+        UserInterfaceSystem.SetUiState(ent.Owner, AirlockControllerUiKey.Key, state);
+
+        if (UserInterfaceSystem.IsUiOpen(ent.Owner, AirlockControllerUiKey.Config))
+            UpdateConfigUi(ent);
     }
 
     protected override bool CanEdit(Entity<AirlockControllerComponent> ent, EntityUid actor)
@@ -64,7 +75,7 @@ public sealed partial class AirlockControllerSystem
         AirlockDeviceKind kind,
         EntityUid actor)
     {
-        if (!InDeviceList(ent, device))
+        if (!_deviceList.GetAllDevices(ent.Owner).Contains(device))
             return false;
 
         return kind switch
@@ -139,34 +150,12 @@ public sealed partial class AirlockControllerSystem
 
     #region Status window
 
-    public void UpdateStatusUi(Entity<AirlockControllerComponent> ent)
-    {
-        var comp = ent.Comp;
-
-        var state = new AirlockControllerUiState
-        {
-            State = comp.State,
-            CurrentSide = comp.CurrentSide,
-            TargetSide = comp.TargetSide,
-            StallReason = comp.StallReason,
-            CancelRequested = comp.CancelRequested,
-            MaintenanceMode = comp.MaintenanceMode,
-            ChamberPressure = TryGetChamberPressure(ent, out var reading) ? reading.Mean : null,
-        };
-
-        UserInterfaceSystem.SetUiState(ent.Owner, AirlockControllerUiKey.Key, state);
-
-        if (UserInterfaceSystem.IsUiOpen(ent.Owner, AirlockControllerUiKey.Config))
-            UpdateConfigUi(ent);
-    }
-
     private void OnCycleMessage(Entity<AirlockControllerComponent> ent, ref AirlockControllerCycleMessage args)
     {
         if (!IsValidSide(args.Side))
             return;
 
         TryRequestCycle(ent, args.Side, args.Actor);
-        UpdateUi(ent);
     }
 
     private void OnCancelMessage(Entity<AirlockControllerComponent> ent, ref AirlockControllerCancelMessage args)
@@ -263,8 +252,8 @@ public sealed partial class AirlockControllerSystem
             ChamberSensorCount = chamberSensors,
             CurrentSide = comp.CurrentSide,
             Sensors = sensors,
-            TargetPressureA = SensorReading(comp, devices, AirlockSide.A),
-            TargetPressureB = SensorReading(comp, devices, AirlockSide.B),
+            TargetPressureA = SensorReading(comp, AirlockSide.A),
+            TargetPressureB = SensorReading(comp, AirlockSide.B),
         });
     }
 
@@ -288,21 +277,13 @@ public sealed partial class AirlockControllerSystem
         return device.IsSensor ? 4 : 5;
     }
 
-    private float? SensorReading(
-        AirlockControllerComponent comp,
-        Dictionary<string, EntityUid> devices,
-        AirlockSide side)
+    private float? SensorReading(AirlockControllerComponent comp, AirlockSide side)
     {
-        if (!comp.TargetSensors.TryGetValue(side, out var sensor))
-            return null;
-
-        foreach (var (address, uid) in devices)
-        {
-            if (uid == sensor && comp.SensorData.TryGetValue(address, out var data))
-                return data.Pressure;
-        }
-
-        return null;
+        return comp.TargetSensors.TryGetValue(side, out var sensor)
+               && TryComp<DeviceNetworkComponent>(sensor, out var net)
+               && comp.SensorData.TryGetValue(net.Address, out var data)
+            ? data.Pressure
+            : null;
     }
 
     private void OnForceSide(Entity<AirlockControllerComponent> ent, ref AirlockControllerForceSideMessage args)
@@ -314,7 +295,6 @@ public sealed partial class AirlockControllerSystem
             return;
 
         ForceSide(ent, args.Side);
-        UpdateUi(ent);
     }
 
     #endregion

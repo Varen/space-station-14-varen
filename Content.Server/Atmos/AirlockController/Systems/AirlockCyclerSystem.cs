@@ -1,4 +1,4 @@
-using Content.Server.Atmos.AirlockController.Components;
+﻿using Content.Server.Atmos.AirlockController.Components;
 using Content.Server.Power.EntitySystems;
 using Content.Shared.Atmos.AirlockController;
 using Content.Shared.Examine;
@@ -28,7 +28,7 @@ public sealed class AirlockCyclerSystem : EntitySystem
         SubscribeLocalEvent<AirlockCyclerComponent, ActivateInWorldEvent>(OnActivate);
         SubscribeLocalEvent<AirlockCyclerComponent, ExaminedEvent>(OnExamine);
 
-        Subs.BuiEvents<AirlockCyclerComponent>(AirlockCyclerUiKey.Key,
+        Subs.BuiEvents<AirlockCyclerComponent>(AirlockControllerUiKey.Key,
             subs =>
         {
             subs.Event<AirlockCyclerCycleMessage>(OnCycleMessage);
@@ -58,7 +58,7 @@ public sealed class AirlockCyclerSystem : EntitySystem
                 _status.Apply(uid, comp.Status);
             }
 
-            if (_ui.IsUiOpen(uid, AirlockCyclerUiKey.Key))
+            if (_ui.IsUiOpen(uid, AirlockControllerUiKey.Key))
                 UpdateUi((uid, comp));
         }
     }
@@ -76,7 +76,7 @@ public sealed class AirlockCyclerSystem : EntitySystem
         if (!args.Complex || args.Handled || !this.IsPowered(ent, EntityManager))
             return;
 
-        _ui.OpenUi(ent.Owner, AirlockCyclerUiKey.Key, args.User);
+        _ui.OpenUi(ent.Owner, AirlockControllerUiKey.Key, args.User);
         UpdateUi(ent);
         args.Handled = true;
     }
@@ -96,7 +96,8 @@ public sealed class AirlockCyclerSystem : EntitySystem
 
         if (ent.Comp.Controller == null)
         {
-            args.PushMarkup(Loc.GetString("airlock-cycler-examine-unbound"));
+            args.PushMarkup(Loc.GetString("airlock-cycler-examine-unbound"),
+                AirlockCycleStatusSystem.StatusPriority);
             return;
         }
 
@@ -107,7 +108,7 @@ public sealed class AirlockCyclerSystem : EntitySystem
     {
         var comp = ent.Comp;
 
-        _ui.SetUiState(ent.Owner, AirlockCyclerUiKey.Key, new AirlockCyclerUiState
+        _ui.SetUiState(ent.Owner, AirlockControllerUiKey.Key, new AirlockCyclerUiState
         {
             Bound = comp.Controller != null,
             Side = comp.Side,

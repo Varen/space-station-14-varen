@@ -1,45 +1,23 @@
 - type: entity
-  parent: BaseWallmountMachine
+  parent: BaseAirlockControlDevice
   id: AirlockCycler
   name: airlock cycler
   description: Calls the airlock's chamber over to your side so you can get in.
   components:
-  - type: StationAiWhitelist
-  - type: Electrified
-    enabled: false
-    usesApcPower: true
   - type: DeviceNetwork
-    deviceNetId: AtmosDevices
-    receiveFrequencyId: AtmosMonitor
-    transmitFrequencyId: AtmosMonitor
     prefix: device-address-prefix-airlock-cycler
     examinableAddress: true
-  - type: WiredNetworkConnection
-  - type: WirelessNetworkConnection
-    range: 200
-  - type: DeviceNetworkRequiresPower
   - type: AirlockCycler
-  - type: AirlockCycleAlarm
-  - type: Clickable
-  - type: InteractionOutline
   - type: UserInterface
     interfaces:
-      enum.AirlockCyclerUiKey.Key:
+      enum.AirlockControllerUiKey.Key:
         type: AirlockCyclerBoundUserInterface
   - type: ContainerFill
     containers:
       board: [ AirlockCyclerElectronics ]
-  - type: ContainerContainer
-    containers:
-      board: !type:Container
-  - type: Appearance
   - type: PointLight
-    enabled: false
-    radius: 3
     energy: 0.8
     color: "#FEEE4A"
-    lightMask: ConeDouble
-    castShadows: false
   - type: RotatingLight
     speed: 30
   - type: Sprite
@@ -60,54 +38,16 @@
     - state: light_off
       shader: unshaded
       map: ["enum.AirlockControllerVisualLayers.Light"]
-  - type: AirlockControllerVisuals
-    stateSprites:
-      Idle: state_idle
-      Sealing: state_sealing
-      Evacuating: state_evacuating
-      Filling: state_filling
-      Unsealing: state_unsealing
-    displaySprites:
-      SideA: side_a
-      SideB: side_b
-      Maintenance: maintenance
   - type: Construction
     graph: AirlockCycler
     node: airlock_cycler
-  - type: Damageable
-    damageModifierSet: Metallic
-  - type: Injurable
-    damageContainer: StructuralInorganic
-  - type: Destructible
-    thresholds:
-    - trigger:
-        !type:DamageTrigger
-        damage: 100
-      behaviors:
-      - !type:DoActsBehavior
-        acts: [ "Destruction" ]
-      - !type:PlaySoundBehavior
-        sound:
-          collection: MetalGlassBreak
-          params:
-            volume: -4
-  - type: GuideHelp
-    guides:
-    - Airlocks
-    - DeviceMonitoringAndControl
 
 - type: entity
-  parent: BaseWallmountMetallic
+  parent: BaseAirlockControlAssembly
   id: AirlockCyclerAssembly
   name: airlock cycler assembly
   description: An airlock cycler. It isn't calling anything yet.
   components:
-  - type: Sprite
-    sprite: Structures/Wallmounts/air_monitors.rsi
-    layers:
-    - state: alarm_b1
-      map: [ "enum.ConstructionVisuals.Layer" ]
-  - type: Appearance
   - type: Construction
     graph: AirlockCycler
     node: assembly

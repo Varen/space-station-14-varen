@@ -4,7 +4,7 @@ using Robust.Client.UserInterface;
 
 namespace Content.Client.Atmos.AirlockController.UI;
 
-public sealed partial class AirlockControllerBoundUserInterface : BoundUserInterface
+public sealed class AirlockControllerBoundUserInterface : BoundUserInterface
 {
     [Dependency] private IPlayerManager _player = default!;
     [Dependency] private AirlockControllerSystem _controller = default!;
@@ -77,37 +77,7 @@ public sealed class AirlockControllerConfigBoundUserInterface : BoundUserInterfa
 
     public override void Update()
     {
-        if (_window == null || !EntMan.TryGetComponent(Owner, out AirlockControllerComponent? controller))
-            return;
-
-        var view = new AirlockConfigView
-        {
-            PresetPressureA = controller.PresetPressureA,
-            PresetPressureB = controller.PresetPressureB,
-            MaintenanceMode = controller.MaintenanceMode,
-        };
-
-        foreach (var (device, roles) in controller.VentRoles)
-        {
-            view.VentRoles[EntMan.GetNetEntity(device)] = roles;
-        }
-
-        foreach (var (device, side) in controller.DoorRoles)
-        {
-            view.DoorRoles[EntMan.GetNetEntity(device)] = side;
-        }
-
-        foreach (var (device, side) in controller.CyclerRoles)
-        {
-            view.CyclerRoles[EntMan.GetNetEntity(device)] = side;
-        }
-
-        if (controller.TargetSensors.TryGetValue(AirlockSide.A, out var sensorA))
-            view.TargetSensorA = EntMan.GetNetEntity(sensorA);
-
-        if (controller.TargetSensors.TryGetValue(AirlockSide.B, out var sensorB))
-            view.TargetSensorB = EntMan.GetNetEntity(sensorB);
-
-        _window.SetConfig(view);
+        if (_window != null && EntMan.TryGetComponent(Owner, out AirlockControllerComponent? controller))
+            _window.SetConfig(controller);
     }
 }

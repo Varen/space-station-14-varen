@@ -1,31 +1,9 @@
 <ui:FancyWindow xmlns="https://spacestation14.io"
-            xmlns:x="http://schemas.microsoft.com/winfx/2007/xaml"
             xmlns:ui="clr-namespace:Content.Client.UserInterface.Controls"
+            xmlns:widgets="clr-namespace:Content.Client.Atmos.AirlockController.UI.Widgets"
             MinSize="340 200" Resizable="True" Title="{Loc airlock-cycler-ui-title}">
     <BoxContainer Orientation="Vertical" Margin="5 5 5 5">
-        <!-- Status -->
-        <BoxContainer Orientation="Horizontal" Margin="0 0 0 4">
-            <PanelContainer Margin="2 0 6 0" StyleClasses="BackgroundPanelDark" VerticalAlignment="Center">
-                <SpriteView Name="EntityView" OverrideDirection="South" Scale="2 2" SetSize="64 64"/>
-            </PanelContainer>
-            <BoxContainer Orientation="Horizontal" HorizontalExpand="True">
-                <BoxContainer Orientation="Vertical" Margin="0 0 4 0" HorizontalExpand="True">
-                    <Label Text="{Loc 'airlock-controller-ui-state-label'}" />
-                    <Label Text="{Loc 'airlock-controller-ui-side-label'}" />
-                    <Label Text="{Loc 'airlock-controller-ui-pressure-label'}" />
-                </BoxContainer>
-                <BoxContainer Orientation="Vertical" HorizontalExpand="True">
-                    <RichTextLabel Name="CStateLabel" />
-                    <RichTextLabel Name="CSideLabel" />
-                    <RichTextLabel Name="CPressureLabel" />
-                </BoxContainer>
-            </BoxContainer>
-        </BoxContainer>
-
-        <!-- Stall warning -->
-        <ui:StripeBack Name="CStallStripe" Visible="False" Margin="0 0 0 4">
-            <RichTextLabel Name="CStallLabel" HorizontalAlignment="Center" />
-        </ui:StripeBack>
+        <widgets:AirlockStatusPanel Name="CStatus" />
 
         <Button Name="CCycleButton" Text="{Loc 'airlock-cycler-ui-cycle'}" HorizontalExpand="True" />
     </BoxContainer>

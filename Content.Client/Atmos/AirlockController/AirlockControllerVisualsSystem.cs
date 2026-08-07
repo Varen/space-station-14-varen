@@ -7,6 +7,14 @@ namespace Content.Client.Atmos.AirlockController;
 
 public sealed class AirlockControllerVisualsSystem : VisualizerSystem<AirlockControllerVisualsComponent>
 {
+    private static readonly AirlockControllerVisualLayers[] HideOnDepowered =
+    [
+        AirlockControllerVisualLayers.State,
+        AirlockControllerVisualLayers.Display,
+        AirlockControllerVisualLayers.Error,
+        AirlockControllerVisualLayers.Light,
+    ];
+
     protected override void OnAppearanceChange(
         EntityUid uid,
         AirlockControllerVisualsComponent comp,
@@ -23,7 +31,7 @@ public sealed class AirlockControllerVisualsSystem : VisualizerSystem<AirlockCon
             return;
         }
 
-        foreach (var layer in comp.HideOnDepowered)
+        foreach (var layer in HideOnDepowered)
         {
             if (SpriteSystem.LayerMapTryGet(sprite, layer, out var hidden, false))
                 SpriteSystem.LayerSetVisible(sprite, hidden, powered);
