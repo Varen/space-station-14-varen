@@ -273,10 +273,14 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (!ent.Comp.CyclerRoles.TryGetValue(cycler, out var side))
             return false;
 
-        return TryRequestCycle(ent, side, user);
+        return TryRequestCycle(ent, side, user, cycler);
     }
 
-    private bool TryRequestCycle(Entity<AirlockControllerComponent> ent, AirlockSide side, EntityUid? user = null)
+    private bool TryRequestCycle(
+        Entity<AirlockControllerComponent> ent,
+        AirlockSide side,
+        EntityUid? user = null,
+        EntityUid? source = null)
     {
         var comp = ent.Comp;
 
@@ -289,10 +293,10 @@ public sealed partial class AirlockControllerSystem : SharedAirlockControllerSys
         if (comp.CurrentSide == side)
             return false;
 
-        // Check access on the side
+        // Check access on the side. Source so it pops error on cycler or panel
         if (user != null && !CanUseSide(ent, side, user.Value))
         {
-            DenyAccess(ent, user.Value);
+            DenyAccess(source ?? ent.Owner, user.Value);
             return false;
         }
 
